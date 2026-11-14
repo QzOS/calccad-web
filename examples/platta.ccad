@@ -1,0 +1,28 @@
+CALCCAD 1
+FORMAT 4 1000000 0.001 0
+H 40 24 0 Temperatur i en platta: partiella differentialekvationer
+T 40 60 660 Stationär värmeledning, Δu = 0, på ett kvadratiskt nät. Övre kanten hålls vid 100 K över omgivningen, de andra vid 0. relax löser femtpunktsekvationen a·u[j+1,k] + b·u[j−1,k] + c·u[j,k+1] + d·u[j,k−1] + e·u[j,k] = f med SOR.
+M 40 140 N:=33
+M 200 140 i:=0..N-1
+M 360 140 j:=0..N-1
+M 40 180 {index:a;i,j}:=1
+M 200 180 {index:f;i,j}:=0*K
+M 40 220 {index:U_0;i,j}:=if(i==0,100*K,0*K)
+M 40 270 U:=relax(a,a,a,a,-4*a,f,U_0,cos({frac:pi;N}))
+M 40 320 {index:U;16,16}=
+T 300 320 380 Mitten: exakt 25 K (fyra roterade problem summerar till 100 K).
+M 40 370 {index:x;i}:={frac:i;N-1}
+P 110 420 420 200 * * * * x	col(U,16),col(U,4)
+T 40 680 660 Temperaturen längs mittlinjen (röd) och nära en kall kant (blå), från den varma kanten.
+H 40 740 0 Poissons ekvation: multigrid
+T 40 780 660 Ett membran under jämnt tryck: Δu = −1 på enhetskvadraten, u = 0 på randen, 2^k + 1 punkter.
+M 40 840 {index:Q;i,j}:=-1
+M 40 880 P:=multigrid(Q,2)
+M 40 920 {index:P;16,16}=
+T 300 920 380 Kontinuerlig lösning: 0.07367 (diskretiseringsfel O(h²)).
+H 40 980 0 Som konturdiagram och ytdiagram
+T 40 1020 660 Infoga → Konturdiagram (Ctrl+5) och Ytdiagram (Ctrl+2) ritar en matris: rad i längs x, kolumn j längs y. Dra i ytdiagrammet för att vrida det. Ett namn på en funktion f(x, y) ritas på ett rutnät över axelgränserna.
+P 60 1080 400 260 * * * * #S8 U	
+P 60 1390 400 280 * * * * #S16 #V35,30 P	
+M 40 1720 w(x,y):=sin(x)*cos(y)
+P 60 1760 400 260 * * * * #S8 w	

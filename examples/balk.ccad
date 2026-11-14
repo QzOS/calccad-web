@@ -1,0 +1,24 @@
+CALCCAD 1
+FORMAT 4 1000000 0.001 0
+H 40 24 0 Fritt upplagd balk: ett randvärdesproblem
+T 40 60 660 Böjlinjen y(x) uppfyller EI · d⁴y/dx⁴ = q. Vid båda stöden är nedböjningen och momentet noll: y = 0 och y'' = 0. I x = 0 saknas alltså y' och y''', som sbval bestämmer genom inskjutning.
+M 40 130 L:=4*m
+M 200 130 q:=2*{frac:kN;m}
+M 400 130 EI:=1.2*{pow:10;6}*N*{pow:m;2}
+T 40 190 660 Tillstånden: y (m), y' (utan enhet), y'' (1/m), y''' (1/m²).
+M 40 230 D(x,y):={mat4x1:{index:y;1};{index:y;2};{index:y;3};{frac:q;EI}}
+M 360 230 score(x,y):={mat2x1:{index:y;0};{index:y;2}}
+M 40 400 load(x,v):={mat4x1:0*m;{index:v;0};0*{frac:1;m};{index:v;1}}
+M 40 580 v:={mat2x1:0.001;0*{frac:1;{pow:m;2}}}
+T 330 580 360 Gissningar med rätt enheter. En ren nolla utan enhet tar grannens enhet i en matris, så y'(0) gissas till 0.001.
+M 40 690 w:=sbval(v,0*m,L,D,load,score)=
+M 40 760 S:=rkfixed(load(0*m,w),0*m,L,40,D)
+M 40 810 {index:S;20,1}=mm
+M 300 800 {frac:5*q*{pow:L;4};384*EI}=mm
+T 40 860 660 Nedböjningen mitt på balken (positiv i lastens riktning) jämfört med formeln 5qL⁴/(384EI).
+P 110 900 420 200 * * * * col(S,0)	col(S,1)
+H 40 1170 0 Skott från båda ändarna: bvalfit
+T 40 1210 660 Samma balk, men skotten startar i x = 0 och x = L och möts mitt på. load2 ger tillståndet vid högra stödet; match(x, y) := y kräver att alla fyra tillstånd stämmer i mötespunkten.
+M 40 1290 load_2(x,v):={mat4x1:0*m;{index:v;0};0*{frac:1;m};{index:v;1}}
+M 400 1290 match(x,y):=y
+M 40 1470 bvalfit(v,v,0*m,L,{frac:L;2},D,load,load_2,match)=

@@ -1,0 +1,840 @@
+/* The page around calccad's WebAssembly module (shell_web.c): the
+   canvas, the scroll container whose bars are the view's, the menu bar
+   (src/app/menu.c's table), the tools and the status bar; the mouse and
+   the keys handed to the module as the Win32 window takes them (a key,
+   then the character it types); the files (/work kept in IndexedDB, the
+   examples in /examples), the clipboard, the dialogs and printing. */
+(function () {
+  'use strict';
+  var C = {NEW: 100, OPEN: 101, SAVE: 102, SAVEAS: 103, EXIT: 104, PRINT: 105, SAVE_EMF: 106,
+           CUT: 202, COPY: 203, PASTE: 204, COPY_IMAGE: 207,
+           INS_MATRIX: 303, INS_UNIT: 308, INS_FUNC: 309, INS_TABLE_CSV: 313, SYM_EVAL: 314,
+           ZOOM_IN: 502, ZOOM_OUT: 503, ZOOM_100: 504, HELP: 600, ABOUT: 601, EXAMPLE: 602,
+           VIEW_PAL0: 900, VIEW_STANDARD: 950, VIEW_RULER: 951, VIEW_STATUS: 952, VIEW_FORMAT: 953,
+           /* the browser's own, in the File menu */
+           UPLOAD: 1001, DOWNLOAD: 1002, FILES: 1003};
+  var AM_END = 0, AM_ITEM = 1, AM_SEP = 2, AM_POPUP = 3;
+  /* calccad's key codes (src/app/keys.h) */
+  var AK = {Backspace: 8, Tab: 9, Enter: 13, Escape: 27, ' ': 32, ArrowLeft: 256, ArrowRight: 257, ArrowUp: 258,
+            ArrowDown: 259, Home: 260, End: 261, PageUp: 262, PageDown: 263, Insert: 264, Delete: 265,
+            '.': 266, '+': 267, '-': 268};
+  var AK_F1 = 269;
+  var view = document.getElementById('view'), canvas = document.getElementById('sheet');
+  var scroller = document.getElementById('scroller'), spacer = document.getElementById('spacer');
+  var keys = document.getElementById('keys'), dlg = document.getElementById('dlg');
+  var M, FS, surface = 0, ratio = 1, pending = false, quiet = 0, clip = '', syncing = null;
+
+  /* ---- drawing, the view, the status ---- */
+
+  function paint() {
+    if (pending)
+      return;
+    pending = true;
+    requestAnimationFrame(function () {
+      pending = false;
+      M._cw_paint();
+    });
+  }
+
+  /* the canvas covers the scroller's client (its bars beside it) in device pixels */
+  function layout() {
+    var w = scroller.clientWidth, h = scroller.clientHeight;
+    ratio = window.devicePixelRatio || 1;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.width = Math.max(1, Math.round(w * ratio));
+    canvas.height = Math.max(1, Math.round(h * ratio));
+    return [canvas.width, canvas.height];
+  }
+
+  function resized() {
+    var s = layout();
+    M._cw_resize(s[0], s[1], ratio);
+    paint();
+  }
+
+  /* the view's bars (device pixels, NT's ranges) as the spacer's size and the scroll position */
+  function bars(vmax, vpage, vpos, hmax, hpage, hpos) {
+    quiet++;
+    spacer.style.height = Math.max(1, (vmax + 1) / ratio) + 'px';
+    spacer.style.width = Math.max(1, (hmax + 1) / ratio) + 'px';
+    scroller.scrollTop = vpos / ratio;
+    scroller.scrollLeft = hpos / ratio;
+    requestAnimationFrame(function () { quiet--; });
+    /* the bars may have taken or given back room */
+    if (canvas.width !== Math.round(scroller.clientWidth * ratio) ||
+        canvas.height !== Math.round(scroller.clientHeight * ratio))
+      setTimeout(resized, 0);
+  }
+
+  function status(hint, note, manual) {
+    document.getElementById('hint').textContent = hint;
+    document.getElementById('note').textContent = note;
+    document.getElementById('mode').textContent = manual ? 'MANUELL' : 'AUTO';
+    document.getElementById('zoom').textContent = Math.round(M._cw_info(2) * 100) + ' %';
+  }
+
+  function str(p) {
+    var t;
+    if (!p)
+      return null;
+    t = M.UTF8ToString(p);
+    M._free(p);
+    return t;
+  }
+
+  function path() {
+    var p = M._malloc(4096), t;
+    M._cw_get_text(-3, p, 4096);
+    t = M.UTF8ToString(p);
+    M._free(p);
+    return t;
+  }
+
+  /* ---- files: /work in IndexedDB, the examples in /examples ---- */
+
+  function sync() {
+    /* /work to IndexedDB, one at a time, the last change included; until
+       it is written, leaving the page asks first (beforeunload) */
+    if (syncing) {
+      syncing.again = true;
+      return;
+    }
+    syncing = {again: false};
+    window.calccadSyncing = true;
+    FS.syncfs(false, function () {
+      var again = syncing.again;
+      syncing = null;
+      if (again)
+        sync();
+      else
+        window.calccadSyncing = false;
+    });
+  }
+
+  function mountWork() {
+    return new Promise(function (resolve) {
+      try { FS.mkdir('/work'); } catch (e) { /* there */ }
+      try { FS.mkdir('/examples'); } catch (e) { /* there */ }
+      try {
+        FS.mount(M.IDBFS, {}, '/work');
+      } catch (e) {
+        resolve();
+        return;
+      }
+      FS.syncfs(true, function () { resolve(); });
+    });
+  }
+
+  function workFiles() {
+    try {
+      return FS.readdir('/work').filter(function (n) { return n !== '.' && n !== '..'; }).sort();
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function exists(p) {
+    try { FS.stat(p); return true; } catch (e) { return false; }
+  }
+
+  function download(name, data, type) {
+    var a = document.createElement('a'), url = URL.createObjectURL(new Blob([data], {type: type}));
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  /* a file from the computer: its name and text (or bytes) */
+  function pick(accept, binary) {
+    var input = document.getElementById('pick');
+    return new Promise(function (resolve) {
+      input.value = '';
+      input.accept = accept || '';
+      input.onchange = function () {
+        var f = input.files[0];
+        if (!f) {
+          resolve(null);
+          return;
+        }
+        (binary ? f.arrayBuffer() : f.text()).then(function (d) { resolve({name: f.name, data: d}); });
+      };
+      input.click();
+    });
+  }
+
+  function load(name) {
+    /* an example: fetched into /examples, opened from there */
+    return fetch('examples/' + name).then(function (r) {
+      if (!r.ok)
+        throw new Error(name + ': ' + r.status);
+      return r.text();
+    }).then(function (text) {
+      FS.writeFile('/examples/' + name, text);
+      if (!M.ccall('cw_open_path', 'number', ['string'], ['/examples/' + name]))
+        throw new Error(name + ': inget calccad-blad');
+      window.calccadLoaded = name;
+      focusKeys();
+    });
+  }
+
+  /* ---- dialogs (one at a time, on <dialog>) ---- */
+
+  function el(tag, attrs, kids) {
+    var e = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'text') e.textContent = attrs[k];
+      else if (k.slice(0, 2) === 'on') e[k] = attrs[k];
+      else e.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (k) { e.appendChild(k); });
+    return e;
+  }
+
+  /* a dialog with a title, a body and buttons [[label, value], ...]: the value of the one pressed */
+  function ask(title, body, buttons) {
+    return new Promise(function (resolve) {
+      var row = el('div', {class: 'buttons'});
+      dlg.innerHTML = '';
+      dlg.appendChild(el('h2', {text: title}));
+      if (body)
+        dlg.appendChild(body);
+      buttons.forEach(function (b, i) {
+        row.appendChild(el('button', {text: b[0], value: String(i), onclick: function (e) {
+          e.preventDefault();
+          dlg.close(String(i));
+        }}));
+      });
+      dlg.appendChild(row);
+      dlg.onclose = function () {
+        var i = dlg.returnValue === '' ? -1 : +dlg.returnValue;
+        dlg.onclose = null;
+        focusKeys();
+        resolve(i >= 0 && i < buttons.length ? buttons[i][1] : null);
+      };
+      dlg.returnValue = '';
+      dlg.showModal();
+      if (body && body.querySelector && body.querySelector('input'))
+        body.querySelector('input').focus();
+    });
+  }
+
+  /* "save the changes?" before the sheet goes: true to go on */
+  function confirmDiscard() {
+    if (!M._cw_info(17))
+      return Promise.resolve(true);
+    return ask('Spara ändringarna i bladet?', null,
+               [['Spara', 'save'], ['Spara inte', 'drop'], ['Avbryt', null]]).then(function (r) {
+      if (r === 'drop') {
+        M._cw_answer_save(0);
+        return true;
+      }
+      if (r === 'save')
+        return save(false);
+      return false;
+    });
+  }
+
+  /* a name in /work to save as: the path, or null */
+  function askName() {
+    var cur = path(), base = cur ? cur.replace(/^.*\//, '') : 'blad.ccad';
+    var input = el('input', {type: 'text', value: base, size: '40'});
+    var body = el('div', {}, [el('div', {text: 'Bladet sparas i webbläsarens arbetsfiler (Arkiv > Arbetsfiler).'}),
+                              el('p', {}, [input])]);
+    return ask('Spara som', body, [['Spara', 'ok'], ['Avbryt', null]]).then(function (r) {
+      var n = input.value.trim().replace(/[\/\\]/g, '_');
+      if (r !== 'ok' || !n)
+        return null;
+      if (!/\.ccad$/i.test(n))
+        n += '.ccad';
+      if (!exists('/work/' + n) || '/work/' + n === cur)
+        return '/work/' + n;
+      return ask(n + ' finns redan. Ersätta den?', null, [['Ersätt', 'yes'], ['Avbryt', null]]).then(function (y) {
+        return y === 'yes' ? '/work/' + n : null;
+      });
+    });
+  }
+
+  /* Save (as: Save as): true when saved */
+  function save(as) {
+    var p = path();
+    if (!as && p.indexOf('/work/') === 0) {
+      M._cw_command(C.SAVE);
+      return Promise.resolve(!M._cw_info(17));
+    }
+    return askName().then(function (np) {
+      if (!np)
+        return false;
+      M.ccall('cw_answer_path', null, ['string'], [np]);
+      M._cw_command(C.SAVEAS);
+      return !M._cw_info(17);
+    });
+  }
+
+  function openDialog() {
+    var list = el('div', {class: 'list'}), chosen = null, body;
+    var files = workFiles().filter(function (n) { return /\.ccad$/i.test(n); });
+    files.forEach(function (n) {
+      var row = el('div', {text: n, onclick: function () {
+        Array.prototype.forEach.call(list.children, function (c) { c.classList.remove('sel'); });
+        row.classList.add('sel');
+        chosen = n;
+      }, ondblclick: function () { chosen = n; dlg.close('0'); }});
+      list.appendChild(row);
+    });
+    if (!files.length)
+      list.appendChild(el('div', {text: '(inga sparade blad än)'}));
+    body = el('div', {}, [el('div', {text: 'Blad i webbläsarens arbetsfiler:'}), list]);
+    return ask('Öppna', body, [['Öppna', 'open'], ['Från datorn…', 'upload'], ['Avbryt', null]]).then(function (r) {
+      if (r === 'open' && chosen) {
+        if (!M.ccall('cw_open_path', 'number', ['string'], ['/work/' + chosen]))
+          return ask('Filen kunde inte läsas som ett calccad-blad.', null, [['OK', null]]);
+      } else if (r === 'upload') {
+        return pick('.ccad,text/plain').then(function (f) {
+          if (!f)
+            return;
+          FS.writeFile('/work/' + f.name, f.data);
+          sync();
+          if (!M.ccall('cw_open_path', 'number', ['string'], ['/work/' + f.name]))
+            return ask('Filen kunde inte läsas som ett calccad-blad.', null, [['OK', null]]);
+        });
+      }
+    });
+  }
+
+  function filesDialog() {
+    var tbody = el('tbody');
+    workFiles().forEach(function (n) {
+      var size = FS.stat('/work/' + n).size;
+      tbody.appendChild(el('tr', {}, [
+        el('td', {text: n}), el('td', {text: size + ' B'}),
+        el('td', {}, [el('button', {text: 'Ladda ner', onclick: function (e) {
+          e.preventDefault();
+          download(n, FS.readFile('/work/' + n), 'application/octet-stream');
+        }})]),
+        el('td', {}, [el('button', {text: 'Ta bort', onclick: function (e) {
+          e.preventDefault();
+          FS.unlink('/work/' + n);
+          sync();
+          e.target.closest('tr').remove();
+        }})])]));
+    });
+    if (!tbody.children.length)
+      tbody.appendChild(el('tr', {}, [el('td', {text: '(inga filer)'})]));
+    return ask('Arbetsfiler', el('div', {}, [
+      el('div', {text: 'Bladen och datafilerna (READPRN, WRITEPRN, READCSV …) i webbläsaren. Ett blad läser och skriver datafiler bredvid sig.'}),
+      el('table', {}, [tbody])]), [['Ladda upp…', 'up'], ['Stäng', null]]).then(function (r) {
+      if (r === 'up')
+        return upload();
+    });
+  }
+
+  function upload() {
+    return pick('', true).then(function (f) {
+      if (!f)
+        return;
+      FS.writeFile('/work/' + f.name, new Uint8Array(f.data));
+      sync();
+      document.getElementById('hint').textContent = f.name + ' finns nu i arbetsfilerna.';
+    });
+  }
+
+  function listDialog(title, note, rows, show) {
+    var filter = el('input', {type: 'search', placeholder: 'Sök', size: '40'}), list = el('div', {class: 'list'});
+    var chosen = null;
+    function fill() {
+      var q = filter.value.toLowerCase();
+      list.innerHTML = '';
+      rows.forEach(function (r) {
+        var t = show(r);
+        if (q && t.toLowerCase().indexOf(q) < 0)
+          return;
+        list.appendChild(el('div', {text: t, onclick: function (e) {
+          Array.prototype.forEach.call(list.children, function (c) { c.classList.remove('sel'); });
+          e.target.classList.add('sel');
+          chosen = r;
+        }, ondblclick: function () { chosen = r; dlg.close('0'); }}));
+      });
+    }
+    filter.oninput = fill;
+    fill();
+    return ask(title, el('div', {}, [el('div', {text: note}), el('p', {}, [filter]), list]),
+               [['Infoga', 'ok'], ['Avbryt', null]]).then(function (r) {
+      return r === 'ok' ? chosen : null;
+    });
+  }
+
+  function matrixDialog() {
+    var r = el('input', {type: 'number', min: '1', max: '100', value: String(M._cw_matrix_size(0)), size: '4'});
+    var c = el('input', {type: 'number', min: '1', max: '100', value: String(M._cw_matrix_size(1)), size: '4'});
+    return ask('Infoga matris', el('div', {}, [el('label', {text: 'Rader '}), r, el('label', {text: '  Kolumner '}), c]),
+               [['OK', 'ok'], ['Avbryt', null]]).then(function (x) {
+      var rows = Math.round(+r.value), cols = Math.round(+c.value);
+      if (x === 'ok' && rows >= 1 && cols >= 1 && rows <= 100 && cols <= 100)
+        M._cw_insert_matrix(rows, cols);
+    });
+  }
+
+  /* ---- printing and pictures ---- */
+
+  /* a canvas of w x h, white, as a surface; done(id) draws on it */
+  function onCanvas(w, h, done) {
+    var c = document.createElement('canvas'), g, id;
+    c.width = w;
+    c.height = h;
+    g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, w, h);
+    id = M.cvwebRegister(c);
+    done(id);
+    M.cvwebUnregister(id);
+    return c;
+  }
+
+  function printSheet() {
+    /* A4 at 150 dpi, as Win32 prints on a printer of that resolution */
+    var dpi = 150, pw = Math.round(8.27 * dpi), ph = Math.round(11.69 * dpi), out = document.getElementById('print');
+    var n = M._cw_print_begin(dpi, pw, ph), k;
+    out.innerHTML = '';
+    for (k = 0; k < n; k++) {
+      var c = onCanvas(pw, ph, function (id) { M._cw_print_page(k, id); });
+      out.appendChild(el('img', {src: c.toDataURL('image/png'), alt: 'sida ' + (k + 1)}));
+    }
+    M._cw_print_end();
+    window.calccadPrinted = n;
+    if (!window.calccadNoPrint)
+      setTimeout(function () { window.print(); }, 50);
+  }
+
+  function picture() {
+    var w = M._cw_image_size(0), h = M._cw_image_size(1);
+    if (!w || !h)
+      return null;
+    return onCanvas(w, h, function (id) { M._cw_image_draw(id); });
+  }
+
+  /* ---- the menu bar: src/app/menu.c's table ---- */
+
+  /* the items the browser does not have */
+  function off(id) {
+    return id === C.EXIT || id === C.VIEW_RULER || id === C.VIEW_FORMAT || (id >= C.VIEW_PAL0 && id < C.VIEW_STANDARD);
+  }
+
+  function label(t) {
+    /* "&Spara\tCtrl+S": the mnemonic underlined, the shortcut apart */
+    var parts = t.split('\t'), name = parts[0], i = name.indexOf('&'), span = el('span');
+    if (i >= 0 && i + 1 < name.length) {
+      span.appendChild(document.createTextNode(name.slice(0, i)));
+      span.appendChild(el('u', {text: name[i + 1]}));
+      span.appendChild(document.createTextNode(name.slice(i + 2)));
+    } else {
+      span.textContent = name.replace('&', '');
+    }
+    return [span, parts[1] || ''];
+  }
+
+  function closeMenus() {
+    Array.prototype.forEach.call(document.querySelectorAll('#menubar .top.open'), function (t) {
+      t.classList.remove('open');
+    });
+  }
+
+  function menuItem(id, text) {
+    var l;
+    if (id === C.SAVE_EMF)
+      text = text.replace('EMF', 'PNG'); /* the browser saves a picture as PNG */
+    l = label(text);
+    var item = el('div', {class: 'item' + (off(id) ? ' off' : ''), 'data-id': String(id)},
+                                         [l[0], el('span', {class: 'key', text: l[1]})]);
+    item.onclick = function (e) {
+      e.stopPropagation();
+      if (off(id))
+        return;
+      closeMenus();
+      command(id);
+    };
+    return item;
+  }
+
+  function buildMenu(table) {
+    var bar = document.getElementById('menubar'), i = 0, stack = [];
+    function items(menu) {
+      for (; i < table.length; i++) {
+        var t = table[i];
+        if (t[0] === AM_END)
+          return;
+        if (t[0] === AM_SEP) {
+          menu.appendChild(el('hr'));
+        } else if (t[0] === AM_ITEM) {
+          menu.appendChild(menuItem(t[1], t[2]));
+          if (t[1] === C.SAVEAS && menu.dataset.file) {
+            /* the browser's own beside Save as */
+            menu.appendChild(el('hr'));
+            menu.appendChild(menuItem(C.UPLOAD, '&Ladda upp fil till arbetsfilerna...'));
+            menu.appendChild(menuItem(C.DOWNLOAD, 'Ladda &ner bladet'));
+            menu.appendChild(menuItem(C.FILES, 'Arbets&filer...'));
+          }
+        } else if (t[0] === AM_POPUP) {
+          var sub = el('div', {class: 'menu'}), item = el('div', {class: 'item sub'}, [label(t[2])[0]]);
+          i++;
+          items(sub);
+          item.appendChild(sub);
+          menu.appendChild(item);
+        }
+        /* AM_PALETTES: Win32's toolbar palettes */
+      }
+    }
+    for (; i < table.length && table[i][0] === AM_POPUP; i++) {
+      var top = el('div', {class: 'top'}), menu = el('div', {class: 'menu'}), btn = el('button', {}, [label(table[i][2])[0]]);
+      if (stack.length === 0)
+        menu.dataset.file = '1';
+      stack.push(top);
+      btn.onclick = function (e) {
+        var t = e.currentTarget.parentNode, was = t.classList.contains('open');
+        e.stopPropagation();
+        closeMenus();
+        if (!was) {
+          checks(t);
+          t.classList.add('open');
+        }
+      };
+      btn.onmouseenter = function (e) {
+        var t = e.currentTarget.parentNode;
+        if (document.querySelector('#menubar .top.open') && !t.classList.contains('open')) {
+          closeMenus();
+          checks(t);
+          t.classList.add('open');
+        }
+      };
+      i++;
+      items(menu);
+      top.appendChild(btn);
+      top.appendChild(menu);
+      bar.appendChild(top);
+    }
+    document.addEventListener('click', closeMenus);
+  }
+
+  /* the checks as the sheet stands */
+  function checks(top) {
+    Array.prototype.forEach.call(top.querySelectorAll('.item[data-id]'), function (it) {
+      var id = +it.getAttribute('data-id'), c = M._cw_menu_checked(id);
+      if (id === C.VIEW_STATUS)
+        c = document.getElementById('status').classList.contains('hidden') ? 0 : 1;
+      else if (id === C.VIEW_STANDARD)
+        c = document.getElementById('tools').classList.contains('hidden') ? 0 : 1;
+      it.classList.toggle('checked', c === 1);
+    });
+  }
+
+  /* ---- the commands: the browser's own first, else src/app's ---- */
+
+  function command(id) {
+    var p;
+    switch (id) {
+    case C.NEW:
+    case C.EXAMPLE:
+      return confirmDiscard().then(function (go) { if (go) M._cw_command(id); focusKeys(); });
+    case C.OPEN:
+      return confirmDiscard().then(function (go) { if (go) return openDialog(); });
+    case C.SAVE:
+      return save(false);
+    case C.SAVEAS:
+      return save(true);
+    case C.UPLOAD:
+      return upload();
+    case C.DOWNLOAD:
+      p = path();
+      download(p ? p.replace(/^.*\//, '') : 'blad.ccad', str(M._cw_sheet_text()) || '', 'text/plain;charset=utf-8');
+      return;
+    case C.FILES:
+      return filesDialog();
+    case C.PRINT:
+      return printSheet();
+    case C.SAVE_EMF: {
+      var c = picture();
+      if (c)
+        c.toBlob(function (b) { download('calccad.png', b, 'image/png'); });
+      return;
+    }
+    case C.COPY_IMAGE: {
+      var pc = picture();
+      if (pc && navigator.clipboard && window.ClipboardItem)
+        pc.toBlob(function (b) { navigator.clipboard.write([new ClipboardItem({'image/png': b})]).catch(function () {}); });
+      return;
+    }
+    case C.CUT:
+    case C.COPY:
+      clip = '';
+      if (M._cw_copy(id === C.CUT ? 1 : 0) && clip && navigator.clipboard)
+        navigator.clipboard.writeText(clip).catch(function () {});
+      return;
+    case C.PASTE:
+      if (navigator.clipboard && navigator.clipboard.readText)
+        navigator.clipboard.readText().then(function (t) { M.ccall('cw_paste', null, ['string'], [t]); }, function () {});
+      return;
+    case C.INS_MATRIX:
+      return matrixDialog();
+    case C.INS_UNIT:
+      return listDialog('Infoga enhet', 'Enheten multipliceras in där markören står (5*kV).',
+                        JSON.parse(str(M._cw_list_json(0))), function (u) {
+        return u[1] + '\t' + u[2] + '\t' + u[3];
+      }).then(function (u) { if (u) M.ccall('cw_insert_text', null, ['string'], [u[0]]); });
+    case C.INS_FUNC:
+      return listDialog('Infoga funktion', 'Funktionens namn och ( skrivs in; skriv argumenten och ).',
+                        JSON.parse(str(M._cw_list_json(1))), function (f) { return f[1]; }).then(function (f) {
+        if (f) M.ccall('cw_insert_text', null, ['string'], [f[0]]);
+      });
+    case C.INS_TABLE_CSV:
+      return pick('.csv,.txt,text/csv,text/plain').then(function (f) {
+        var name;
+        if (!f)
+          return;
+        name = (f.name.replace(/\..*$/, '').match(/[A-Za-z][A-Za-z0-9]*/) || ['data'])[0].slice(0, 20);
+        M.ccall('cw_table_csv', 'number', ['string', 'string'], [name, f.data]);
+      });
+    case C.SYM_EVAL:
+      M._cw_sym_eval();
+      return;
+    case C.VIEW_STATUS:
+      document.getElementById('status').classList.toggle('hidden');
+      return resized();
+    case C.VIEW_STANDARD:
+      document.getElementById('tools').classList.toggle('hidden');
+      return resized();
+    case C.HELP:
+      return ask('calccad – hjälp', el('pre', {text: JSON.parse(str(M._cw_list_json(2)))}), [['Stäng', null]]);
+    case C.ABOUT:
+      return ask('Om calccad', el('div', {text: 'calccad – ett Mathcad-inspirerat räkneblad i C99, här i webbläsaren som WebAssembly. ' +
+        'Numerik från QzOS/matlab1982 (LINPACK, EISPACK), formeleditor från QzOS/calculator. Apache License 2.0.'}), [['OK', null]]);
+    default:
+      M._cw_command(id);
+    }
+  }
+
+  /* ---- the keys and the mouse ---- */
+
+  function focusKeys() {
+    keys.focus({preventScroll: true});
+  }
+
+  /* calccad's key for a keyboard event (keys.h), 0 for none */
+  function keyOf(e) {
+    var m;
+    if (AK[e.key] !== undefined)
+      return AK[e.key];
+    if (e.key === '=' && e.ctrlKey)
+      return AK['+']; /* Ctrl+= as Ctrl+Plus on a US keyboard */
+    if ((m = /^F([0-9]+)$/.exec(e.key)) && +m[1] >= 1 && +m[1] <= 12)
+      return AK_F1 + +m[1] - 1;
+    if ((m = /^Key([A-Z])$/.exec(e.code)))
+      return m[1].charCodeAt(0);
+    if ((m = /^(?:Digit|Numpad)([0-9])$/.exec(e.code)))
+      return m[1].charCodeAt(0);
+    return 0;
+  }
+
+  /* the character a key types, as WM_CHAR has it; 0 for none */
+  function charOf(e) {
+    var altgr = e.getModifierState && e.getModifierState('AltGraph');
+    if ((e.ctrlKey || e.metaKey || e.altKey) && !altgr)
+      return 0;
+    if (e.key === 'Enter') return 13;
+    if (e.key === 'Tab') return 9;
+    if (e.key === 'Backspace') return 8;
+    if (e.key === 'Escape') return 27;
+    if (e.key.length === 1 || (e.key.length === 2 && e.key.codePointAt(0) > 0xFFFF))
+      return e.key.codePointAt(0);
+    return 0; /* a dead key, a modifier, a named key */
+  }
+
+  function onKey(e) {
+    var altgr = e.getModifierState && e.getModifierState('AltGraph');
+    var ctrl = (e.ctrlKey || e.metaKey) && !altgr, k = keyOf(e), c = charOf(e), done = 0;
+    if (e.isComposing)
+      return;
+    if (ctrl && (k === 67 || k === 86 || k === 88) && !e.shiftKey && !e.altKey)
+      return; /* Ctrl+C, V, X: the browser's copy, paste and cut events */
+    if (ctrl && !e.altKey) {
+      /* the browser's own commands under their Win32 shortcuts */
+      if (k === 83) { e.preventDefault(); command(e.shiftKey ? C.SAVEAS : C.SAVE); return; }
+      if (k === 79) { e.preventDefault(); command(C.OPEN); return; }
+      if (k === 78 && !e.shiftKey) { e.preventDefault(); command(C.NEW); return; }
+      if (k === 80) { e.preventDefault(); command(C.PRINT); return; }
+      if (k === 77) { e.preventDefault(); command(C.INS_MATRIX); return; }
+    }
+    if (k)
+      done = M._cw_key(k, ctrl ? 1 : 0, e.shiftKey ? 1 : 0);
+    if (c)
+      M._cw_char(c);
+    if (done || c)
+      e.preventDefault(); /* not the browser's: scrolling, focus, going back */
+  }
+
+  /* text that came without a key: each character as typed */
+  function typed(t) {
+    var i, c;
+    if (!t)
+      return;
+    for (i = 0; i < t.length; i += c > 0xFFFF ? 2 : 1) {
+      c = t.codePointAt(i);
+      M._cw_char(c === 10 ? 13 : c);
+    }
+  }
+
+  function onInput(e) {
+    if (e.isComposing || e.inputType === 'insertCompositionText')
+      return; /* the input method's text comes whole at compositionend */
+    if (e.inputType === 'insertFromPaste')
+      return; /* the paste event's */
+    if (e.data)
+      typed(e.data);
+    else if (e.inputType === 'insertLineBreak')
+      M._cw_char(13);
+    e.preventDefault();
+    keys.value = '';
+  }
+
+  function onCopy(e) {
+    clip = '';
+    if (M._cw_copy(e.type === 'cut' ? 1 : 0) && clip) {
+      e.clipboardData.setData('text/plain', clip);
+      e.preventDefault();
+    }
+  }
+
+  function onPaste(e) {
+    var t = e.clipboardData.getData('text/plain');
+    e.preventDefault();
+    if (t)
+      M.ccall('cw_paste', null, ['string'], [t]);
+  }
+
+  /* the canvas point (device pixels) of a pointer event; null on the scroll bars */
+  function at(e) {
+    var r = scroller.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    if (x < 0 || y < 0 || x >= scroller.clientWidth || y >= scroller.clientHeight)
+      return null;
+    return [Math.round(x * ratio), Math.round(y * ratio)];
+  }
+
+  function onDown(e) {
+    var p = at(e);
+    closeMenus();
+    if (e.button !== 0 || !p)
+      return;
+    focusKeys();
+    scroller.setPointerCapture(e.pointerId);
+    M._cw_mouse_down(p[0], p[1], (e.ctrlKey || e.metaKey) ? 1 : 0, e.shiftKey ? 1 : 0, e.detail >= 2 ? 1 : 0);
+    e.preventDefault();
+  }
+
+  function onMove(e) {
+    var r = scroller.getBoundingClientRect();
+    M._cw_mouse_move(Math.round((e.clientX - r.left) * ratio), Math.round((e.clientY - r.top) * ratio),
+                     (e.buttons & 1) ? 1 : 0);
+  }
+
+  function onUp(e) {
+    var r = scroller.getBoundingClientRect();
+    if (e.button !== 0)
+      return;
+    if (scroller.hasPointerCapture(e.pointerId))
+      scroller.releasePointerCapture(e.pointerId);
+    M._cw_mouse_up(Math.round((e.clientX - r.left) * ratio), Math.round((e.clientY - r.top) * ratio),
+                   e.shiftKey ? 1 : 0);
+  }
+
+  function events() {
+    scroller.addEventListener('scroll', function () {
+      if (quiet > 0)
+        return;
+      M._cw_scroll(1, Math.round(scroller.scrollTop * ratio));
+      M._cw_scroll(0, Math.round(scroller.scrollLeft * ratio));
+    });
+    scroller.addEventListener('wheel', function (e) {
+      var r;
+      if (!e.ctrlKey)
+        return; /* the scroller scrolls */
+      e.preventDefault();
+      r = scroller.getBoundingClientRect();
+      M._cw_zoom(M._cw_info(2) * Math.pow(1.1, -e.deltaY / 100),
+                 Math.round((e.clientX - r.left) * ratio), Math.round((e.clientY - r.top) * ratio));
+    }, {passive: false});
+    /* the keys go to a text field out of sight: its input events carry
+       what no key event does (an input method, a character not on the
+       keyboard's layout); its copy, cut and paste events are the clipboard */
+    keys.addEventListener('keydown', onKey);
+    keys.addEventListener('beforeinput', onInput);
+    keys.addEventListener('compositionend', function (e) { typed(e.data); keys.value = ''; });
+    keys.addEventListener('focus', function () { M._cw_focus(1); });
+    keys.addEventListener('blur', function () { M._cw_focus(0); });
+    keys.addEventListener('copy', onCopy);
+    keys.addEventListener('cut', onCopy);
+    keys.addEventListener('paste', onPaste);
+    scroller.addEventListener('pointerdown', onDown);
+    scroller.addEventListener('pointermove', onMove);
+    scroller.addEventListener('pointerup', onUp);
+    scroller.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    window.addEventListener('beforeunload', function (e) {
+      if (M._cw_info(17) || syncing) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
+    document.getElementById('zoomin').onclick = function () { M._cw_command(C.ZOOM_IN); focusKeys(); };
+    document.getElementById('zoomout').onclick = function () { M._cw_command(C.ZOOM_OUT); focusKeys(); };
+    document.getElementById('zoom100').onclick = function () { M._cw_command(C.ZOOM_100); focusKeys(); };
+    new ResizeObserver(resized).observe(view);
+    /* a new device pixel ratio (the window moved to another screen, the browser's zoom) */
+    (function watch() {
+      matchMedia('(resolution: ' + (window.devicePixelRatio || 1) + 'dppx)').addEventListener('change', function () {
+        resized();
+        watch();
+      }, {once: true});
+    })();
+    focusKeys();
+  }
+
+  createCalccad({
+    onInvalidate: paint,
+    onBars: function () { bars.apply(null, arguments); },
+    onStatus: function (h, n, m) { if (M) status(h, n, m); },
+    onTitle: function (t) { document.title = t; },
+    onSaved: function () { if (FS) sync(); },
+    onClip: function (t) { clip = t; window.calccadLastClip = t; },
+  }).then(function (mod) {
+    M = mod;
+    FS = M.FS;
+    window.calccad = M;
+    window.calccadCommand = command;
+    return Promise.all([M.cvwebLoadFonts('fonts'), mountWork()]);
+  }).then(function () {
+    var s;
+    surface = M.cvwebRegister(canvas);
+    s = layout();
+    if (!M._cw_open(surface, s[0], s[1], ratio))
+      throw new Error('cw_open');
+    buildMenu(JSON.parse(str(M._cw_menu_json())));
+    events();
+    return fetch('examples/index.json').then(function (r) { return r.json(); });
+  }).then(function (names) {
+    var sel = document.getElementById('sheets'), want = new URLSearchParams(location.search).get('sheet') || 'demo.ccad';
+    names.forEach(function (n) {
+      var o = document.createElement('option');
+      o.value = o.textContent = n;
+      sel.appendChild(o);
+    });
+    sel.value = want;
+    sel.onchange = function () {
+      confirmDiscard().then(function (go) { if (go) load(sel.value); });
+    };
+    return load(want);
+  }).catch(function (e) {
+    document.getElementById('hint').textContent = 'Fel: ' + e.message;
+    window.calccadError = String(e);
+  });
+})();

@@ -1,0 +1,14 @@
+CALCCAD 1
+H 40 24 0 Symbolisk räkning med →
+M 40 70 factor({pow:x;4}+4)->
+M 40 120 factor({pow:x;2}-{pow:y;2})->
+M 40 170 {frac:{pow:x;2}-1;x-1}->
+M 40 230 solve(exp(2*x)-3*exp(x)+2==0,x)->
+M 40 310 {int:;;x*{pow:e;{pow:x;2}};x}->
+M 40 380 {int:;;{frac:1;{pow:x;3}+1};x}->
+M 40 500 {int:0;pi;x*sin(x);x}->
+M 40 570 limit({frac:sin(x);x},x,0)->
+M 40 630 series(tan(x),x,0,7)->
+M 40 690 {deriv:x;{pow:x;2}*sin(x)}->
+M 40 750 laplace(exp(-t)*sin(2*t),t,s)->
+M 40 810 invlaplace({frac:s+3;{pow:s;2}+2*s+5},s,t)->

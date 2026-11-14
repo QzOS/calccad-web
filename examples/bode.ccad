@@ -1,0 +1,13 @@
+CALCCAD 1
+H 40 24 0 RC-lågpassfilter: Bodediagram
+M 40 70 R:=1*kohm
+M 240 70 C:=100*nF
+M 40 110 f_c:={frac:1;2*pi*R*C}=Hz
+M 40 160 H(f):={frac:1;1+1j*{frac:f*Hz;f_c}}
+M 40 250 A(f):=20*log({abs:H(f)})
+M 340 250 phi(f):=arg(H(f))
+P 90 310 300 200 10 1000000 * * #L1 f	A(f)
+P 90 590 300 200 10 1000000 * * #L1 f	phi(f)
+T 430 330 250 Amplitud i dB mot frekvens i Hz (logaritmisk axel). Vid brytfrekvensen har kurvan fallit 3 dB.
+T 430 610 250 Fasen går från 0 till −π/2.
+M 430 440 A(1592)=

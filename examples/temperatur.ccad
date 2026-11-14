@@ -1,0 +1,11 @@
+CALCCAD 1
+H 40 24 0 Värmeflöde genom en vägg
+M 40 70 lambda:=0.04*{frac:W;m*K}
+M 260 70 d:=200*mm
+M 420 70 A_v:=12*{pow:m;2}
+M 40 120 T_i:=21*degC
+M 260 120 T_u:=-15*degC
+M 40 170 Phi:={frac:lambda*A_v*(T_i-T_u);d}=
+M 40 220 dT:=T_i-T_u=ddegC
+M 40 260 Q:=Phi*24*h=kWh
+M 40 300 T_i=degF
