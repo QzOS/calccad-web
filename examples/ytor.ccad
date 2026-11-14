@@ -1,0 +1,18 @@
+CALCCAD 1
+FORMAT 4 1000000 0.001 0
+H 40 24 0 Ytor: parametriska och funktionsytor
+T 40 60 660 Ett ytdiagram (Ctrl+2) ritar en matris, en funktion f(x, y), eller tre: X, Y, Z. Tre funktioner av (u, v) ritas över axelgränserna (0 .. 2π om inget annat sägs i Axlar…); här u 0 .. π. Har x, y och z samma enhet blir skalan lika på alla axlar, så sfären blir rund. Dra i diagrammet för att vrida det.
+M 40 150 X(u,v):=sin(u)*cos(v)
+M 260 150 Y(u,v):=sin(u)*sin(v)
+M 480 150 Z(u,v):=cos(u)
+P 60 190 380 280 0 3.14159265358979 * * #S16 #V35,25 X,Y,Z	
+T 40 520 660 Tre matriser av samma storlek ger punkterna (X[i,j], Y[i,j], Z[i,j]), som Mathcads nästlade matris:
+M 40 570 i:=0..30
+M 160 570 j:=0..30
+M 280 570 {index:T_x;i,j}:=(3+cos({frac:2*pi*j;30}))*cos({frac:2*pi*i;30})*m
+M 40 620 {index:T_y;i,j}:=(3+cos({frac:2*pi*j;30}))*sin({frac:2*pi*i;30})*m
+M 40 670 {index:T_z;i,j}:=sin({frac:2*pi*j;30})*m
+P 60 720 380 260 * * * * #S16 #V30,40 T_x,T_y,T_z	
+H 40 1020 0 En funktion av x och y
+M 40 1060 p(x,y):=({pow:x;2}-{pow:y;2})*kN
+P 60 1100 380 280 * * * * #S16 #V-30,35 p	

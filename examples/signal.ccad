@@ -1,0 +1,19 @@
+CALCCAD 1
+FORMAT 4 1000000 0.001 0
+H 40 24 0 Frekvensinnehåll och Besselfunktioner
+T 40 60 660 En signal med 256 sampel och två toner, 10 och 30 perioder per fönster. fft ger de 129 första koefficienterna (resten är konjugat).
+M 40 120 n:=0..255
+M 40 160 {index:x;n}:=sin({frac:2*pi*10*n;256})+0.5*sin({frac:2*pi*30*n;256})
+M 40 210 c:=fft(x)
+M 200 210 k:=0..128
+M 360 210 {index:A;k}:={abs:{index:c;k}}
+P 110 250 420 200 * * * * k	A
+M 40 480 {abs:{index:c;10}}=
+M 220 480 {abs:{index:c;30}}=
+T 40 520 660 Toppar 8 och 4 (amplituden gånger √256/2 med Mathcads 1/√n).
+H 40 580 0 Ett runt membran
+T 40 620 660 Grundtonen hos ett fast inspänt runt membran ges av första nollstället till J0. Specialfunktionerna har kontrollerad noggrannhet (se README).
+M 40 680 z_1:=root(J0(z),z,2,3)=
+M 300 680 J1(z_1)=
+M 40 720 r:=0.1,0.2..15
+P 110 760 420 200 * * * * r	J0(r),J1(r),Jn(5,r)

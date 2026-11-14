@@ -1,0 +1,10 @@
+CALCCAD 1
+H 40 24 0 Dämpad svängning: differentialekvation
+T 40 64 600 y″ + 2ζω·y′ + ω²·y = 0 som ett system av första ordningen: y₀ = läget, y₁ = hastigheten.
+M 40 110 omega:=2
+M 200 110 zeta:=0.1
+M 40 160 D(t,y):={mat2x1:{index:y;1};-2*zeta*omega*{index:y;1}-{pow:omega;2}*{index:y;0}}
+M 40 230 S:=rkfixed({mat2x1:1;0},0,20,400,D)
+P 90 290 420 220 * * * * col(S,0)	col(S,1),col(S,2)
+M 40 580 {index:S;400,1}=
+T 40 620 600 Röd: läget, blå: hastigheten. Slutvärdet närmar sig 0 med e^(−ζωt).

@@ -1,0 +1,13 @@
+# Cloudflare (Workers static assets, Pages): every response cross-origin
+# isolated, so the page loads the threaded build at once (SharedArrayBuffer)
+# without its service worker's reload; the module and wasm not cached
+# stale over a new deployment.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+/*.js
+  Cache-Control: no-cache
+
+/*.wasm
+  Cache-Control: no-cache

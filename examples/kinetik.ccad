@@ -1,0 +1,26 @@
+CALCCAD 1
+FORMAT 4 1000000 0.001 0
+H 40 24 0 Kemisk kinetik: ett styvt system (Robertson)
+T 40 60 660 Tre ämnen, A → B (långsamt), B + B → C + B (mycket snabbt), B + C → A + C. Hastighetskonstanterna skiljer sig med en faktor 10⁹, så systemet är styvt: Rkadapt skulle behöva hundratusentals steg, Radau och Stiffb klarar det med några hundra.
+M 40 140 k_1:={frac:0.04;s}
+M 220 140 k_2:={frac:3e7;s}
+M 400 140 k_3:={frac:1e4;s}
+M 40 210 D(t,y):={mat3x1:-k_1*{index:y;0}+k_3*{index:y;1}*{index:y;2};k_1*{index:y;0}-k_3*{index:y;1}*{index:y;2}-k_2*{pow:{index:y;1};2};k_2*{pow:{index:y;1};2}}
+M 500 230 y_0:={mat3x1:1;0;0}
+M 40 340 S:=Radau(y_0,0*s,40*s,40,D)
+M 40 390 {index:S;40,1}=
+M 220 390 {index:S;40,2}=
+M 420 390 {index:S;40,3}=
+T 40 430 660 Referens (scipy, Radau med rtol 1e-13): 0.7158, 9.186e-6, 0.2842.
+M 40 470 t:=col(S,0)
+P 110 510 420 220 * * * * t	col(S,1),col(S,3),{pow:10;4}*col(S,2)
+T 40 800 660 Röd: A, blå: C, grön: B gånger 10⁴. Samma problem med Stiffb (extrapolerad implicit Euler) ger samma värden inom toleransen:
+M 40 860 S_b:=Stiffb(y_0,0*s,40*s,40,D)
+M 380 860 {index:S_b;40,1}-{index:S;40,1}=
+H 40 930 0 Samma problem som differential-algebraiskt system
+T 40 970 660 Summan av koncentrationerna är 1. Med en massmatris M vars tredje rad är noll blir tredje ekvationen ett bivillkor, 0 = y₀ + y₁ + y₂ − 1, i stället för en differentialekvation (en algebraisk rad får ha vilken enhet som helst).
+M 40 1060 D_a(t,y):={mat3x1:-k_1*{index:y;0}+k_3*{index:y;1}*{index:y;2};k_1*{index:y;0}-k_3*{index:y;1}*{index:y;2}-k_2*{pow:{index:y;1};2};{index:y;0}+{index:y;1}+{index:y;2}-1}
+M 500 1080 M:={mat3x3:1;0;0;0;1;0;0;0;0}
+M 40 1190 S_a:=Radau(y_0,0*s,40*s,40,D_a,M)
+M 40 1240 {index:S_a;40,1}=
+M 300 1240 {index:S_a;40,1}+{index:S_a;40,2}+{index:S_a;40,3}-1=

@@ -1,0 +1,19 @@
+CALCCAD 1
+FORMAT 4 1000000 0.001 0 0 1
+H 40 24 0 Massa på fjäder: tillstånd med olika enheter
+T 40 60 640 Tillståndsvektorn har läget i meter och hastigheten i meter per sekund. Matriser kan ha element med olika enheter; Rkadapt kontrollerar att D(t, y) ger y/t för varje element.
+M 40 120 k:=4*{frac:N;m}
+M 200 120 m_1:=1*kg
+M 340 120 c:=0.4*{frac:N*s;m}
+M 40 160 y_0:={mat2x1:0.1*m;0*{frac:m;s}}=
+M 40 230 D(t,y):={mat2x1:{index:y;1};{frac:-k*{index:y;0}-c*{index:y;1};m_1}}
+M 40 330 S:=Rkadapt(y_0,0*s,10*s,200,D)
+M 40 370 {index:S;200,0}=
+M 200 370 {index:S;200,1}=
+M 360 370 {index:S;200,2}=
+M 40 410 t:=col(S,0)
+M 200 410 x:=col(S,1)
+P 110 450 380 200 * * * * t	x
+T 40 720 640 En övergångsmatris för ett tidssteg: den vanliga 0:an passar alla enheter, 0 m/s behåller sin.
+M 40 760 Phi:={mat2x2:1;0.01*s;0;1}
+M 300 760 Phi*y_0=

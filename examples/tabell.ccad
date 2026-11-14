@@ -1,0 +1,12 @@
+CALCCAD 1
+FORMAT 4 1000000 0.001 0 0 1
+H 40 24 0 Mätdata i en tabell
+T 40 60 600 En tabell definierar en matris. Klicka i en cell och skriv; högerklicka för enhet, CSV-import och -export.
+B 40 112 0 prov		t (s),v (m/s)\n0,0\n0.5,1.2\n1,2.31\n1.5,3.38\n2,4.52\n2.5,5.61\n3,6.69\n
+M 300 120 t:=col(prov,0)*s
+M 300 160 v:=col(prov,1)*{frac:m;s}
+M 300 200 a:=slope(t,v)={frac:m;{pow:s;2}}
+M 300 250 v_0:=intercept(t,v)=
+B 40 330 0 T_i	degC	Rum\n20.5\n21\n22.4\n
+M 300 340 mean(T_i)=degC
+M 300 380 max(T_i)-min(T_i)=ddegC
