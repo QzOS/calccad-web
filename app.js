@@ -479,6 +479,13 @@
           }
         } else if (t[0] === AM_POPUP) {
           var sub = el('div', {class: 'menu'}), item = el('div', {class: 'item sub'}, [label(t[2])[0]]);
+          /* a tap opens it (no hover on a touch screen) */
+          item.onclick = function (e) {
+            if (e.target === e.currentTarget || e.target.parentNode === e.currentTarget) {
+              e.stopPropagation();
+              e.currentTarget.classList.toggle('open');
+            }
+          };
           i++;
           items(sub);
           item.appendChild(sub);
@@ -685,17 +692,33 @@
     }
   }
 
+  /* The text field holds two blanks with the caret at their end: an
+     on-screen keyboard (Android, iOS) sends its Backspace as an input
+     event only when there is something to delete, and its keys mostly
+     as "Unidentified" key events with the text in the input event. */
+  function sentinel() {
+    keys.value = '  ';
+    try { keys.setSelectionRange(2, 2); } catch (e) { /* not focused */ }
+  }
+
   function onInput(e) {
     if (e.isComposing || e.inputType === 'insertCompositionText')
       return; /* the input method's text comes whole at compositionend */
     if (e.inputType === 'insertFromPaste')
       return; /* the paste event's */
-    if (e.data)
-      typed(e.data);
-    else if (e.inputType === 'insertLineBreak')
+    if (e.inputType === 'deleteContentBackward') {
+      M._cw_key(AK.Backspace, 0, 0);
+      M._cw_char(8);
+    } else if (e.inputType === 'deleteContentForward') {
+      M._cw_key(AK.Delete, 0, 0);
+    } else if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
+      M._cw_key(AK.Enter, 0, 0);
       M._cw_char(13);
+    } else if (e.data) {
+      typed(e.data);
+    }
     e.preventDefault();
-    keys.value = '';
+    sentinel();
   }
 
   function onCopy(e) {
@@ -721,9 +744,16 @@
     return [Math.round(x * ratio), Math.round(y * ratio)];
   }
 
-  function onDown(e) {
+  /* a client point in the canvas's device pixels */
+  function dev(x, y) {
+    var r = scroller.getBoundingClientRect();
+    return [Math.round((x - r.left) * ratio), Math.round((y - r.top) * ratio)];
+  }
+
+  /* ---- the mouse (and a pen): as the Win32 window has it ---- */
+
+  function mouseDown(e) {
     var p = at(e);
-    closeMenus();
     if (e.button !== 0 || !p)
       return;
     focusKeys();
@@ -732,20 +762,145 @@
     e.preventDefault();
   }
 
-  function onMove(e) {
-    var r = scroller.getBoundingClientRect();
-    M._cw_mouse_move(Math.round((e.clientX - r.left) * ratio), Math.round((e.clientY - r.top) * ratio),
-                     (e.buttons & 1) ? 1 : 0);
+  function mouseMove(e) {
+    var p = dev(e.clientX, e.clientY);
+    M._cw_mouse_move(p[0], p[1], (e.buttons & 1) ? 1 : 0);
   }
 
-  function onUp(e) {
-    var r = scroller.getBoundingClientRect();
+  function mouseUp(e) {
+    var p = dev(e.clientX, e.clientY);
     if (e.button !== 0)
       return;
     if (scroller.hasPointerCapture(e.pointerId))
       scroller.releasePointerCapture(e.pointerId);
-    M._cw_mouse_up(Math.round((e.clientX - r.left) * ratio), Math.round((e.clientY - r.top) * ratio),
-                   e.shiftKey ? 1 : 0);
+    M._cw_mouse_up(p[0], p[1], e.shiftKey ? 1 : 0);
+  }
+
+  /* ---- a finger: the browser scrolls (the scroller's touch-action: pan-x
+     pan-y); a tap is a click, a second tap soon and near a double click;
+     a long press, then a drag, is the mouse's drag (moving regions, the
+     rubber band); two fingers zoom the sheet about their middle ---- */
+
+  var LONG_MS = 450, SLOP = 10;
+  var fingers = {}, one = null, pinch = null, lastTap = null;
+
+  function fingerList() {
+    return Object.keys(fingers).map(function (k) { return fingers[k]; });
+  }
+
+  function longPress() {
+    var p;
+    if (!one || one.moved)
+      return;
+    one.drag = true; /* the sheet takes the finger now: its moves are the mouse's */
+    p = dev(one.x0, one.y0);
+    M._cw_mouse_down(p[0], p[1], 0, 0, 0);
+    if (navigator.vibrate)
+      navigator.vibrate(15);
+  }
+
+  function dropOne() {
+    if (!one)
+      return;
+    clearTimeout(one.timer);
+    if (one.drag) {
+      var p = dev(one.x0, one.y0);
+      M._cw_mouse_up(p[0], p[1], 0);
+    }
+    one = null;
+  }
+
+  function fingerDown(e) {
+    var f;
+    if (!at(e))
+      return;
+    /* no compatibility mouse events after it (their mousedown would take the
+       focus from the keys); scrolling is touch-action's, not stopped by this */
+    e.preventDefault();
+    fingers[e.pointerId] = {x: e.clientX, y: e.clientY};
+    f = fingerList();
+    if (f.length === 2) {
+      dropOne();
+      pinch = {d: Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y), zoom: M._cw_info(2)};
+    } else if (f.length === 1) {
+      one = {id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, drag: false};
+      one.timer = setTimeout(longPress, LONG_MS);
+    }
+  }
+
+  function fingerMove(e) {
+    var f, d, c, p;
+    if (!fingers[e.pointerId])
+      return;
+    fingers[e.pointerId] = {x: e.clientX, y: e.clientY};
+    if (pinch) {
+      f = fingerList();
+      if (f.length >= 2 && pinch.d > 0) {
+        d = Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y);
+        c = dev((f[0].x + f[1].x) / 2, (f[0].y + f[1].y) / 2);
+        M._cw_zoom(pinch.zoom * d / pinch.d, c[0], c[1]);
+      }
+      return;
+    }
+    if (!one || one.id !== e.pointerId)
+      return;
+    if (one.drag) {
+      p = dev(e.clientX, e.clientY);
+      M._cw_mouse_move(p[0], p[1], 1);
+    } else if (Math.hypot(e.clientX - one.x0, e.clientY - one.y0) > SLOP) {
+      one.moved = true; /* the browser scrolls */
+      clearTimeout(one.timer);
+    }
+  }
+
+  function fingerUp(e) {
+    var p, q, now, dbl;
+    if (!fingers[e.pointerId])
+      return;
+    delete fingers[e.pointerId];
+    if (pinch) {
+      if (fingerList().length < 2)
+        pinch = null;
+      return;
+    }
+    if (!one || one.id !== e.pointerId)
+      return;
+    clearTimeout(one.timer);
+    if (one.drag) {
+      p = dev(e.clientX, e.clientY);
+      M._cw_mouse_up(p[0], p[1], 0);
+    } else if (!one.moved && e.type === 'pointerup') {
+      q = dev(one.x0, one.y0);
+      now = Date.now();
+      dbl = lastTap && now - lastTap.t < 350 && Math.hypot(one.x0 - lastTap.x, one.y0 - lastTap.y) < 25;
+      M._cw_mouse_down(q[0], q[1], 0, 0, dbl ? 1 : 0);
+      M._cw_mouse_up(q[0], q[1], 0);
+      lastTap = dbl ? null : {t: now, x: one.x0, y: one.y0};
+      focusKeys(); /* in the tap's own handler, so the on-screen keyboard comes */
+    }
+    one = null;
+  }
+
+  function onDown(e) {
+    closeMenus();
+    if (e.pointerType === 'touch')
+      fingerDown(e);
+    else
+      mouseDown(e);
+  }
+
+  function onMove(e) {
+    if (e.pointerType === 'touch')
+      fingerMove(e);
+    else
+      mouseMove(e);
+  }
+
+  function onUp(e) {
+    if (e.pointerType === 'touch')
+      fingerUp(e);
+    else
+      mouseUp(e);
   }
 
   function events() {
@@ -769,8 +924,8 @@
        keyboard's layout); its copy, cut and paste events are the clipboard */
     keys.addEventListener('keydown', onKey);
     keys.addEventListener('beforeinput', onInput);
-    keys.addEventListener('compositionend', function (e) { typed(e.data); keys.value = ''; });
-    keys.addEventListener('focus', function () { M._cw_focus(1); });
+    keys.addEventListener('compositionend', function (e) { typed(e.data); sentinel(); });
+    keys.addEventListener('focus', function () { sentinel(); M._cw_focus(1); });
     keys.addEventListener('blur', function () { M._cw_focus(0); });
     keys.addEventListener('copy', onCopy);
     keys.addEventListener('cut', onCopy);
@@ -778,6 +933,12 @@
     scroller.addEventListener('pointerdown', onDown);
     scroller.addEventListener('pointermove', onMove);
     scroller.addEventListener('pointerup', onUp);
+    scroller.addEventListener('pointercancel', onUp); /* the browser took the finger: it scrolls */
+    /* while the sheet has the finger (after a long press) or two fingers zoom, the browser does not scroll */
+    scroller.addEventListener('touchmove', function (e) {
+      if ((one && one.drag) || pinch)
+        e.preventDefault();
+    }, {passive: false});
     scroller.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     window.addEventListener('beforeunload', function (e) {
       if (M._cw_info(17) || syncing) {
