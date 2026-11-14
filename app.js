@@ -1013,6 +1013,7 @@
     document.getElementById('zoomin').onclick = function () { M._cw_command(C.ZOOM_IN); focusKeys(); };
     document.getElementById('zoomout').onclick = function () { M._cw_command(C.ZOOM_OUT); focusKeys(); };
     document.getElementById('zoom100').onclick = function () { M._cw_command(C.ZOOM_100); focusKeys(); };
+    mathKeyboard();
     new ResizeObserver(resized).observe(view);
     /* a new device pixel ratio (the window moved to another screen, the browser's zoom) */
     (function watch() {
@@ -1022,6 +1023,106 @@
       }, {once: true});
     })();
     focusKeys();
+  }
+
+  /* ---- the formula keyboard (math_keyboard.js): its keys ask, the
+     editor's own operations do; it never takes the focus from the keys ---- */
+
+  var TEMPLATE_CHAR = {fraction: '/', power: '^', sqrt: '\\', abs: '|', deriv: '?', index: '[', integral: '&',
+                       sum: '$', define: ':', eval: '=', symbolic: '->'};
+  var CHAR_OF_KEY = {Backspace: 8, Enter: 13, Tab: 9, Escape: 27, ' ': 32};
+  var coarse = matchMedia('(pointer: coarse)').matches;
+
+  function inText() {
+    return M._cw_info(16) === 1; /* a text region edited (RG_TEXT) */
+  }
+
+  /* the keys keep the focus; a key acts in a touchend or pointerup, so a
+     focus here is the user's (iOS) */
+  function keepFocus() {
+    if (document.activeElement !== keys)
+      focusKeys();
+  }
+
+  var editorKeys = {
+    insertString: function (t) { keepFocus(); typed(t); },
+    insertName: function (name, ch) {
+      keepFocus();
+      if (inText())
+        typed(ch);
+      else
+        M.ccall('cw_insert_text', null, ['string'], [name]);
+    },
+    insertFunction: function (t) {
+      keepFocus();
+      if (inText())
+        typed(t);
+      else
+        M.ccall('cw_insert_text', null, ['string'], [t]);
+    },
+    onArrow: function (dir) {
+      keepFocus();
+      M._cw_key(AK['Arrow' + dir.charAt(0).toUpperCase() + dir.slice(1)], 0, 0);
+    },
+    onKey: function (name) {
+      keepFocus();
+      if (AK[name] !== undefined)
+        M._cw_key(AK[name], 0, 0);
+      if (CHAR_OF_KEY[name])
+        M._cw_char(CHAR_OF_KEY[name]);
+    },
+    operation: function (op, arg) {
+      keepFocus();
+      if (TEMPLATE_CHAR[op] !== undefined)
+        return typed(TEMPLATE_CHAR[op]);
+      if (op === 'matrix')
+        return arg ? M._cw_insert_matrix(arg[0], arg[1]) : command(C.INS_MATRIX);
+      if (op === 'unit')
+        return command(C.INS_UNIT);
+      if (op === 'function')
+        return command(C.INS_FUNC);
+    },
+    systemKeyboard: function () {
+      showMathKeyboard(false, true);
+    },
+    hide: function () {
+      showMathKeyboard(false, false);
+    }
+  };
+
+  var mkb = null;
+
+  /* shown: the device's keyboard stays away (inputmode none) on a touch
+     screen; hidden: it comes again, at once when asked (system) */
+  function showMathKeyboard(on, system) {
+    var el = document.getElementById('mkb');
+    el.classList.toggle('hidden', !on);
+    document.getElementById('mkbtoggle').classList.toggle('on', on);
+    try { localStorage.setItem('calccad-mkb', on ? '1' : '0'); } catch (e) { /* no storage */ }
+    if (coarse || keys.inputMode === 'none') {
+      keys.inputMode = on && coarse ? 'none' : 'text';
+      if (system || on) {
+        /* the new inputmode counts from the next focus */
+        keys.blur();
+        focusKeys();
+      }
+    }
+    resized();
+  }
+
+  function mathKeyboard() {
+    var stored = null, btn = document.getElementById('mkbtoggle');
+    mkb = new window.MathKeyboard(document.getElementById('mkb'), editorKeys);
+    window.calccadMathKeyboard = mkb;
+    try { stored = localStorage.getItem('calccad-mkb'); } catch (e) { /* no storage */ }
+    btn.addEventListener('mousedown', function (e) { e.preventDefault(); }); /* the keys keep the focus */
+    btn.onclick = function () { showMathKeyboard(document.getElementById('mkb').classList.contains('hidden'), true); };
+    if (stored === '1' || (stored === null && coarse)) {
+      document.getElementById('mkb').classList.remove('hidden');
+      btn.classList.add('on');
+      if (coarse)
+        keys.inputMode = 'none';
+    }
   }
 
   createCalccad({
