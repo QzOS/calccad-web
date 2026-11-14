@@ -777,13 +777,54 @@
     M._cw_mouse_up(p[0], p[1], e.shiftKey ? 1 : 0);
   }
 
-  /* ---- a finger: the browser scrolls (the scroller's touch-action: pan-x
-     pan-y); a tap is a click, a second tap soon and near a double click;
-     a long press, then a drag, is the mouse's drag (moving regions, the
-     rubber band); two fingers zoom the sheet about their middle ---- */
+  /* ---- a finger: the page's own, not the browser's (the scroller's
+     touch-action: none). A drag scrolls the sheet, gliding on after the
+     finger lets go; a tap is a click, a second tap soon and near a double
+     click; a long press, then a drag, is the mouse's drag (moving regions,
+     the rubber band); two fingers zoom the sheet about their middle. The
+     browser scrolling by itself took the finger from a long press as soon
+     as it moved (iOS Safari: pointercancel), so regions could not move. ---- */
 
   var LONG_MS = 450, SLOP = 10;
-  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false;
+  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false, glide = null;
+
+  /* the sheet scrolled by the finger: the scroller's own scroll event
+     tells the sheet */
+  function panTo(e) {
+    var t = performance.now();
+    scroller.scrollLeft = one.sl - (e.clientX - one.x0);
+    scroller.scrollTop = one.st - (e.clientY - one.y0);
+    one.track.push({t: t, x: e.clientX, y: e.clientY});
+    while (one.track.length > 2 && t - one.track[0].t > 100)
+      one.track.shift();
+  }
+
+  /* after the finger lets go: on at its speed (of its last 0.1 s), slowing */
+  function glideFrom(track) {
+    var a = track[0], b = track[track.length - 1], dt = b.t - a.t, vx, vy, last;
+    if (track.length < 2 || dt <= 0 || performance.now() - b.t > 80)
+      return;
+    vx = (b.x - a.x) / dt;
+    vy = (b.y - a.y) / dt;
+    if (Math.hypot(vx, vy) < 0.2)
+      return;
+    last = performance.now();
+    glide = requestAnimationFrame(function step(now) {
+      var dt2 = Math.min(now - last, 50), f = Math.pow(0.996, dt2);
+      last = now;
+      scroller.scrollLeft -= vx * dt2;
+      scroller.scrollTop -= vy * dt2;
+      vx *= f;
+      vy *= f;
+      glide = Math.hypot(vx, vy) > 0.02 ? requestAnimationFrame(step) : null;
+    });
+  }
+
+  function stopGlide() {
+    if (glide !== null)
+      cancelAnimationFrame(glide);
+    glide = null;
+  }
 
   function fingerList() {
     return Object.keys(fingers).map(function (k) { return fingers[k]; });
@@ -816,15 +857,17 @@
     if (!at(e))
       return;
     /* no compatibility mouse events after it (their mousedown would take the
-       focus from the keys); scrolling is touch-action's, not stopped by this */
+       focus from the keys) */
     e.preventDefault();
+    stopGlide();
     fingers[e.pointerId] = {x: e.clientX, y: e.clientY};
     f = fingerList();
     if (f.length === 2) {
       dropOne();
       pinch = {d: Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y), zoom: M._cw_info(2)};
     } else if (f.length === 1) {
-      one = {id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, drag: false};
+      one = {id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, drag: false,
+             sl: scroller.scrollLeft, st: scroller.scrollTop, track: []};
       one.timer = setTimeout(longPress, LONG_MS);
     }
   }
@@ -848,9 +891,12 @@
     if (one.drag) {
       p = dev(e.clientX, e.clientY);
       M._cw_mouse_move(p[0], p[1], 1);
+    } else if (one.moved) {
+      panTo(e);
     } else if (Math.hypot(e.clientX - one.x0, e.clientY - one.y0) > SLOP) {
-      one.moved = true; /* the browser scrolls */
+      one.moved = true; /* a drag before the long press: it scrolls */
       clearTimeout(one.timer);
+      panTo(e);
     }
   }
 
@@ -870,7 +916,10 @@
     if (one.drag) {
       p = dev(e.clientX, e.clientY);
       M._cw_mouse_up(p[0], p[1], 0);
-    } else if (!one.moved && e.type === 'pointerup') {
+    } else if (one.moved) {
+      if (e.type === 'pointerup')
+        glideFrom(one.track);
+    } else if (e.type === 'pointerup') {
       q = dev(one.x0, one.y0);
       now = Date.now();
       dbl = lastTap && now - lastTap.t < 350 && Math.hypot(one.x0 - lastTap.x, one.y0 - lastTap.y) < 25;
@@ -936,8 +985,7 @@
     scroller.addEventListener('pointerdown', onDown);
     scroller.addEventListener('pointermove', onMove);
     scroller.addEventListener('pointerup', onUp);
-    scroller.addEventListener('pointercancel', onUp); /* the browser took the finger: it scrolls */
-    /* while the sheet has the finger (after a long press) or two fingers zoom, the browser does not scroll */
+    scroller.addEventListener('pointercancel', onUp);
     /* A tap's touchend: the keys focused in it (iOS shows its keyboard only
        for a focus in a touchend or a click), and its default prevented, the
        one way that keeps every browser (iOS Safari too) from sending the
@@ -952,10 +1000,9 @@
     }, {passive: false});
     /* nor may any mousedown on the sheet move the focus: the page keeps it on the keys */
     scroller.addEventListener('mousedown', function (e) { e.preventDefault(); });
-    scroller.addEventListener('touchmove', function (e) {
-      if ((one && one.drag) || pinch)
-        e.preventDefault();
-    }, {passive: false});
+    /* the finger is the page's: no scrolling or zooming by the browser
+       (as touch-action: none; for a browser that would anyway) */
+    scroller.addEventListener('touchmove', function (e) { e.preventDefault(); }, {passive: false});
     scroller.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     window.addEventListener('beforeunload', function (e) {
       if (M._cw_info(17) || syncing) {
