@@ -786,7 +786,7 @@
      as it moved (iOS Safari: pointercancel), so regions could not move. ---- */
 
   var LONG_MS = 450, SLOP = 10;
-  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false, glide = null, touchFocused = false;
+  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false, glide = null;
 
   /* the sheet scrolled by the finger: the scroller's own scroll event
      tells the sheet */
@@ -996,13 +996,6 @@
         return;
       tapped = false;
       e.preventDefault();
-      if (!touchFocused && keys.inputMode === 'none') {
-        /* iOS reads the inputmode when a gesture first focuses the field:
-           focused when the page loaded, its first tap brought the device's
-           keyboard anyway. Focused afresh here, as the keyboard key does. */
-        keys.blur();
-      }
-      touchFocused = true;
       focusKeys();
     }, {passive: false});
     /* nor may any mousedown on the sheet move the focus: the page keeps it on the keys */
@@ -1099,17 +1092,26 @@
 
   var mkb = null;
 
-  /* shown: the device's keyboard stays away (inputmode none) on a touch
-     screen; hidden: it comes again, at once when asked (system) */
+  /* The device's on-screen keyboard kept away while this one is shown on
+     a touch screen: the field read-only (as GeoGebra's: iOS shows no
+     keyboard for it, even on the first tap; inputmode none alone did not
+     stop that), its key events (a hardware keyboard's) still the keys'. */
+  function deviceKeyboard(on) {
+    keys.readOnly = !on;
+    keys.inputMode = on ? 'text' : 'none';
+  }
+
+  /* shown or hidden; hidden on a touch screen, the device's keyboard comes
+     again, at once when asked (system) */
   function showMathKeyboard(on, system) {
     var el = document.getElementById('mkb');
     el.classList.toggle('hidden', !on);
     document.getElementById('mkbtoggle').classList.toggle('on', on);
     try { localStorage.setItem('calccad-mkb', on ? '1' : '0'); } catch (e) { /* no storage */ }
-    if (coarse || keys.inputMode === 'none') {
-      keys.inputMode = on && coarse ? 'none' : 'text';
+    if (coarse || keys.readOnly) {
+      deviceKeyboard(!(on && coarse));
       if (system || on) {
-        /* the new inputmode counts from the next focus */
+        /* counted from the next focus */
         keys.blur();
         focusKeys();
       }
@@ -1128,7 +1130,7 @@
       document.getElementById('mkb').classList.remove('hidden');
       btn.classList.add('on');
       if (coarse)
-        keys.inputMode = 'none';
+        deviceKeyboard(false);
     }
   }
 
