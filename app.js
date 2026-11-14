@@ -22,7 +22,7 @@
   var view = document.getElementById('view'), canvas = document.getElementById('sheet');
   var scroller = document.getElementById('scroller'), spacer = document.getElementById('spacer');
   var keys = document.getElementById('keys'), dlg = document.getElementById('dlg');
-  var M, FS, surface = 0, ratio = 1, pending = false, quiet = 0, clip = '', syncing = null;
+  var M, FS, surface = 0, ratio = 1, pending = false, echo = null, clip = '', syncing = null;
 
   /* ---- drawing, the view, the status ---- */
 
@@ -55,12 +55,13 @@
 
   /* the view's bars (device pixels, NT's ranges) as the spacer's size and the scroll position */
   function bars(vmax, vpage, vpos, hmax, hpage, hpos) {
-    quiet++;
     spacer.style.height = Math.max(1, (vmax + 1) / ratio) + 'px';
     spacer.style.width = Math.max(1, (hmax + 1) / ratio) + 'px';
     scroller.scrollTop = vpos / ratio;
     scroller.scrollLeft = hpos / ratio;
-    requestAnimationFrame(function () { quiet--; });
+    /* the scroll event this causes is the view's own, not the user's: known
+       by where it puts the scroller (not by time: a frame can be late) */
+    echo = [scroller.scrollTop, scroller.scrollLeft];
     /* the bars may have taken or given back room */
     if (canvas.width !== Math.round(scroller.clientWidth * ratio) ||
         canvas.height !== Math.round(scroller.clientHeight * ratio))
@@ -905,8 +906,9 @@
 
   function events() {
     scroller.addEventListener('scroll', function () {
-      if (quiet > 0)
-        return;
+      if (echo && scroller.scrollTop === echo[0] && scroller.scrollLeft === echo[1])
+        return; /* where bars() put it */
+      echo = null;
       M._cw_scroll(1, Math.round(scroller.scrollTop * ratio));
       M._cw_scroll(0, Math.round(scroller.scrollLeft * ratio));
     });
