@@ -786,7 +786,7 @@
      as it moved (iOS Safari: pointercancel), so regions could not move. ---- */
 
   var LONG_MS = 450, SLOP = 10;
-  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false, glide = null;
+  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false, glide = null, touchFocused = false;
 
   /* the sheet scrolled by the finger: the scroller's own scroll event
      tells the sheet */
@@ -996,6 +996,13 @@
         return;
       tapped = false;
       e.preventDefault();
+      if (!touchFocused && keys.inputMode === 'none') {
+        /* iOS reads the inputmode when a gesture first focuses the field:
+           focused when the page loaded, its first tap brought the device's
+           keyboard anyway. Focused afresh here, as the keyboard key does. */
+        keys.blur();
+      }
+      touchFocused = true;
       focusKeys();
     }, {passive: false});
     /* nor may any mousedown on the sheet move the focus: the page keeps it on the keys */
