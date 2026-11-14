@@ -783,7 +783,7 @@
      rubber band); two fingers zoom the sheet about their middle ---- */
 
   var LONG_MS = 450, SLOP = 10;
-  var fingers = {}, one = null, pinch = null, lastTap = null;
+  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false;
 
   function fingerList() {
     return Object.keys(fingers).map(function (k) { return fingers[k]; });
@@ -877,7 +877,8 @@
       M._cw_mouse_down(q[0], q[1], 0, 0, dbl ? 1 : 0);
       M._cw_mouse_up(q[0], q[1], 0);
       lastTap = dbl ? null : {t: now, x: one.x0, y: one.y0};
-      focusKeys(); /* in the tap's own handler, so the on-screen keyboard comes */
+      focusKeys();
+      tapped = true; /* the touchend that follows focuses again: iOS's keyboard comes only there */
     }
     one = null;
   }
@@ -937,6 +938,20 @@
     scroller.addEventListener('pointerup', onUp);
     scroller.addEventListener('pointercancel', onUp); /* the browser took the finger: it scrolls */
     /* while the sheet has the finger (after a long press) or two fingers zoom, the browser does not scroll */
+    /* A tap's touchend: the keys focused in it (iOS shows its keyboard only
+       for a focus in a touchend or a click), and its default prevented, the
+       one way that keeps every browser (iOS Safari too) from sending the
+       compatibility mousedown and click after it, whose mousedown took the
+       focus from the keys: the caret flashed and went, no keyboard came. */
+    scroller.addEventListener('touchend', function (e) {
+      if (!tapped)
+        return;
+      tapped = false;
+      e.preventDefault();
+      focusKeys();
+    }, {passive: false});
+    /* nor may any mousedown on the sheet move the focus: the page keeps it on the keys */
+    scroller.addEventListener('mousedown', function (e) { e.preventDefault(); });
     scroller.addEventListener('touchmove', function (e) {
       if ((one && one.drag) || pinch)
         e.preventDefault();
