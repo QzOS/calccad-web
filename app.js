@@ -1043,6 +1043,8 @@
     document.getElementById('zoomout').onclick = function () { M._cw_command(C.ZOOM_OUT); focusKeys(); };
     document.getElementById('zoom100').onclick = function () { M._cw_command(C.ZOOM_100); focusKeys(); };
     mathKeyboard();
+    if (new URLSearchParams(location.search).has('debug'))
+      debugPanel();
     new ResizeObserver(resized).observe(view);
     /* a new device pixel ratio (the window moved to another screen, the browser's zoom) */
     (function watch() {
@@ -1154,6 +1156,57 @@
       }
     }
     resized();
+  }
+
+  /* ?debug=1: a log on the page of what moves the focus and when the
+     device's keyboard comes (the visual viewport shrinks), for a device
+     the tests cannot see (an iPad) */
+  function debugPanel() {
+    var box = document.createElement('pre'), lines = [], lastH = 0, lastActive = '';
+    box.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99;margin:0;max-height:40%;overflow:auto;' +
+      'background:rgba(255,255,220,0.94);font:11px monospace;padding:4px;pointer-events:none;white-space:pre-wrap';
+    document.body.appendChild(box);
+    function name(el) {
+      return !el ? '-' : el === document.body ? 'body' : (el.id ? '#' + el.id : el.tagName.toLowerCase());
+    }
+    function log(s) {
+      var t = (performance.now() / 1000).toFixed(2);
+      lines.push(t + ' ' + s);
+      if (lines.length > 40)
+        lines.shift();
+      box.textContent = lines.join('\n');
+      box.scrollTop = 1e6;
+    }
+    log('touchy ' + touchy + ' maxTouchPoints ' + navigator.maxTouchPoints + ' pointer:coarse ' +
+        matchMedia('(pointer: coarse)').matches + ' any-pointer:coarse ' + matchMedia('(any-pointer: coarse)').matches +
+        ' mkbTouch ' + mkbTouch() + ' keys.readOnly ' + keys.readOnly + ' inputMode ' + keys.inputMode);
+    log(navigator.userAgent);
+    document.addEventListener('focusin', function (e) {
+      log('focusin ' + name(e.target) + ' (editing ' + M._cw_info(11) + ', mkbTouch ' + mkbTouch() + ')\n' +
+          (new Error().stack || '').split('\n').slice(1, 6).join(' | '));
+    }, true);
+    document.addEventListener('focusout', function (e) { log('focusout ' + name(e.target)); }, true);
+    ['touchstart', 'touchend', 'pointerdown', 'pointerup', 'click', 'mousedown'].forEach(function (t) {
+      document.addEventListener(t, function (e) {
+        log(t + ' on ' + name(e.target) + (e.defaultPrevented ? ' (prevented)' : '') + ' active ' + name(document.activeElement));
+      }, true);
+    });
+    function viewport() {
+      var h = window.visualViewport ? Math.round(window.visualViewport.height) : window.innerHeight;
+      var a = name(document.activeElement);
+      if (h !== lastH) {
+        log('viewport h ' + lastH + ' -> ' + h + (lastH && h < lastH - 100 ? '  << KEYBOARD? active ' + a : ''));
+        lastH = h;
+      }
+      if (a !== lastActive) {
+        log('active ' + lastActive + ' -> ' + a);
+        lastActive = a;
+      }
+    }
+    if (window.visualViewport)
+      window.visualViewport.addEventListener('resize', viewport);
+    setInterval(viewport, 300);
+    viewport();
   }
 
   function mathKeyboard() {
