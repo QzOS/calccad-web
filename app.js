@@ -894,10 +894,11 @@
     } else if (f.length === 1) {
       one = {id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, drag: false,
              sl: scroller.scrollLeft, st: scroller.scrollTop, track: []};
-      if (fingerMode === 'probe') {
-        var q = dev(e.clientX, e.clientY);
+      var q = dev(e.clientX, e.clientY);
+      if (fingerMode === 'probe')
         one.probe = M._cw_probe(q[0], q[1], 1) === 1; /* on a plot: read; else the point goes */
-      }
+      else if (fingerMode === 'edit' && M._cw_info(16) === 1 && M._cw_hit(q[0], q[1]) === M._cw_info(11))
+        one.select = true; /* in the text being edited: a drag selects in it */
     }
   }
 
@@ -963,8 +964,8 @@
     } else if (one.moved) {
       panTo(e);
     } else if (Math.hypot(e.clientX - one.x0, e.clientY - one.y0) > SLOP) {
-      if (fingerMode === 'move') {
-        startDrag(e); /* moves the region, or the rubber band */
+      if (fingerMode === 'move' || one.select) {
+        startDrag(e); /* moves the region, or the rubber band; in the edited text, selects */
       } else {
         one.moved = true; /* the edit mode: it scrolls */
         panTo(e);
