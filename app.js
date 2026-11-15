@@ -50,6 +50,9 @@
   function resized() {
     var s = layout();
     M._cw_resize(s[0], s[1], ratio);
+    /* the formula keyboard took the bottom: the input kept above it */
+    if (!document.getElementById('mkb').classList.contains('hidden'))
+      M._cw_reveal_input();
     paint();
   }
 
