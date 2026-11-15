@@ -1031,7 +1031,9 @@
   var TEMPLATE_CHAR = {fraction: '/', power: '^', sqrt: '\\', abs: '|', deriv: '?', index: '[', integral: '&',
                        sum: '$', define: ':', eval: '=', symbolic: '->'};
   var CHAR_OF_KEY = {Backspace: 8, Enter: 13, Tab: 9, Escape: 27, ' ': 32};
-  var coarse = matchMedia('(pointer: coarse)').matches;
+  /* a touch screen: any, not only the primary pointer (an iPad with a
+     keyboard or trackpad attached says pointer: fine) */
+  var touchy = (navigator.maxTouchPoints || 0) > 0 || matchMedia('(any-pointer: coarse)').matches;
 
   function inText() {
     return M._cw_info(16) === 1; /* a text region edited (RG_TEXT) */
@@ -1108,8 +1110,8 @@
     el.classList.toggle('hidden', !on);
     document.getElementById('mkbtoggle').classList.toggle('on', on);
     try { localStorage.setItem('calccad-mkb', on ? '1' : '0'); } catch (e) { /* no storage */ }
-    if (coarse || keys.readOnly) {
-      deviceKeyboard(!(on && coarse));
+    if (touchy || keys.readOnly) {
+      deviceKeyboard(!(on && touchy));
       if (system || on) {
         /* counted from the next focus */
         keys.blur();
@@ -1126,10 +1128,10 @@
     try { stored = localStorage.getItem('calccad-mkb'); } catch (e) { /* no storage */ }
     btn.addEventListener('mousedown', function (e) { e.preventDefault(); }); /* the keys keep the focus */
     btn.onclick = function () { showMathKeyboard(document.getElementById('mkb').classList.contains('hidden'), true); };
-    if (stored === '1' || (stored === null && coarse)) {
+    if (stored === '1' || (stored === null && touchy)) {
       document.getElementById('mkb').classList.remove('hidden');
       btn.classList.add('on');
-      if (coarse)
+      if (touchy)
         deviceKeyboard(false);
     }
   }
