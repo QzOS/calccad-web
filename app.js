@@ -625,7 +625,17 @@
 
   /* ---- the keys and the mouse ---- */
 
+  /* The keys' focus. With the formula keyboard on a touch screen the page
+     focuses no field at all (iOS brought its own keyboard for any focused
+     field, read-only too): the editor is told it has the focus, and a
+     hardware keyboard's keys come to the document (keysToDocument). */
   function focusKeys() {
+    if (M && mkbTouch()) {
+      if (document.activeElement === keys)
+        keys.blur();
+      M._cw_focus(1);
+      return;
+    }
     keys.focus({preventScroll: true});
   }
 
@@ -786,7 +796,7 @@
      as it moved (iOS Safari: pointercancel), so regions could not move. ---- */
 
   var LONG_MS = 450, SLOP = 10;
-  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false, glide = null;
+  var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false, glide = null, tapEnd = false;
 
   /* the sheet scrolled by the finger: the scroller's own scroll event
      tells the sheet */
@@ -926,8 +936,17 @@
       M._cw_mouse_down(q[0], q[1], 0, 0, dbl ? 1 : 0);
       M._cw_mouse_up(q[0], q[1], 0);
       lastTap = dbl ? null : {t: now, x: one.x0, y: one.y0};
-      focusKeys();
-      tapped = true; /* the touchend that follows focuses again: iOS's keyboard comes only there */
+      tapEnd = true; /* its touchend's default prevented */
+      if (mkbTouch()) {
+        focusKeys(); /* the editor's focus, no field's */
+      } else if (M._cw_info(11) >= 0) {
+        /* a formula or text edited: the device's keyboard, focused again in
+           the touchend (iOS shows it only there) */
+        focusKeys();
+        tapped = true;
+      } else if (document.activeElement === keys) {
+        keys.blur(); /* nothing edited: no keyboard */
+      }
     }
     one = null;
   }
@@ -992,12 +1011,20 @@
        compatibility mousedown and click after it, whose mousedown took the
        focus from the keys: the caret flashed and went, no keyboard came. */
     scroller.addEventListener('touchend', function (e) {
-      if (!tapped)
+      if (!tapEnd)
         return;
-      tapped = false;
+      tapEnd = false;
       e.preventDefault();
-      focusKeys();
+      if (tapped)
+        focusKeys();
+      tapped = false;
     }, {passive: false});
+    /* a hardware keyboard's keys while no field has the focus (the formula
+       keyboard on a touch screen): the keys' as ever */
+    document.addEventListener('keydown', function (e) {
+      if ((e.target === document.body || e.target === document.documentElement) && !dlg.open)
+        onKey(e);
+    });
     /* nor may any mousedown on the sheet move the focus: the page keeps it on the keys */
     scroller.addEventListener('mousedown', function (e) { e.preventDefault(); });
     /* the finger is the page's: no scrolling or zooming by the browser
@@ -1042,8 +1069,13 @@
   /* the keys keep the focus; a key acts in a touchend or pointerup, so a
      focus here is the user's (iOS) */
   function keepFocus() {
-    if (document.activeElement !== keys)
+    if (mkbTouch() || document.activeElement !== keys)
       focusKeys();
+  }
+
+  /* the formula keyboard shown on a touch screen */
+  function mkbTouch() {
+    return touchy && mkb !== null && !document.getElementById('mkb').classList.contains('hidden');
   }
 
   var editorKeys = {
@@ -1113,7 +1145,7 @@
     if (touchy || keys.readOnly) {
       deviceKeyboard(!(on && touchy));
       if (system || on) {
-        /* counted from the next focus */
+        /* counted from the next focus; shown: no field's */
         keys.blur();
         focusKeys();
       }
