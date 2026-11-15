@@ -78,7 +78,7 @@
   dialog pre { white-space: pre-wrap; max-height: 60vh; overflow: auto; tab-size: 18; margin: 0; }
   dialog table { border-collapse: collapse; width: 100%; }
   dialog td { padding: 3px 6px; border-bottom: 1px solid var(--bar-border); }
-  #mkbtoggle.on { background: var(--menu-hover); }
+  #mkbtoggle.on, #tools button.icon.on { background: var(--menu-hover); }
   /* the formula keyboard (math_keyboard.js) */
   #mkb { flex: none; padding: 4px; border-top: 1px solid var(--bar-border); background: #e4e6ea;
          user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
@@ -111,6 +111,9 @@
     <button id="undo" class="icon" title="Ångra (Ctrl+Z)" aria-label="Ångra"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
     <button id="redo" class="icon" title="Gör om (Ctrl+Y)" aria-label="Gör om"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
     <span class="sep"></span>
+    <button id="modeEdit" class="icon on hidden" title="Redigera: tryck för att skriva, dra för att rulla" aria-label="Redigera"><svg viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z"/></svg></button>
+    <button id="modeMove" class="icon hidden" title="Flytta: dra en region, dra på tom yta för att markera flera" aria-label="Flytta"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg></button>
+    <span class="sep hidden" id="modeSep"></span>
     <select id="sheets" aria-label="Exempelblad"></select>
     <button id="zoomout" title="Zooma ut (Ctrl+Minus)">&minus;</button>
     <span id="zoom">100 %</span>

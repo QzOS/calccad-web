@@ -801,7 +801,7 @@
      browser scrolling by itself took the finger from a long press as soon
      as it moved (iOS Safari: pointercancel), so regions could not move. ---- */
 
-  var LONG_MS = 450, SLOP = 10;
+  var SLOP = 10;
   var fingers = {}, one = null, pinch = null, lastTap = null, tapped = false, glide = null, tapEnd = false;
 
   /* the sheet scrolled by the finger: the scroller's own scroll event
@@ -846,21 +846,26 @@
     return Object.keys(fingers).map(function (k) { return fingers[k]; });
   }
 
-  function longPress() {
-    var p;
-    if (!one || one.moved)
-      return;
-    one.drag = true; /* the sheet takes the finger now: its moves are the mouse's */
-    p = dev(one.x0, one.y0);
+  /* The finger's mode (the toolbar, a touch screen): 'edit', a tap places
+     the caret or the crosshair and a drag scrolls; 'move', a drag on a
+     region moves it (with what else is selected), a drag on nothing is
+     the rubber band, a tap selects a region or lets it go. Two fingers
+     zoom and pan in both; the mouse and a pen are as ever. */
+  var fingerMode = 'edit';
+
+  /* a drag in the move mode: the mouse's drag from where the finger
+     went down (the view starts it past its own slop) */
+  function startDrag(e) {
+    var p = dev(one.x0, one.y0);
+    one.drag = true;
     M._cw_mouse_down(p[0], p[1], 0, 0, 0);
-    if (navigator.vibrate)
-      navigator.vibrate(15);
+    p = dev(e.clientX, e.clientY);
+    M._cw_mouse_move(p[0], p[1], 1);
   }
 
   function dropOne() {
     if (!one)
       return;
-    clearTimeout(one.timer);
     if (one.drag) {
       var p = dev(one.x0, one.y0);
       M._cw_mouse_up(p[0], p[1], 0);
@@ -885,8 +890,20 @@
     } else if (f.length === 1) {
       one = {id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, drag: false,
              sl: scroller.scrollLeft, st: scroller.scrollTop, track: []};
-      one.timer = setTimeout(longPress, LONG_MS);
     }
+  }
+
+  function setFingerMode(m) {
+    fingerMode = m;
+    document.getElementById('modeEdit').classList.toggle('on', m === 'edit');
+    document.getElementById('modeMove').classList.toggle('on', m === 'move');
+    if (m === 'move') {
+      if (M._cw_info(11) >= 0)
+        M._cw_key(AK.Escape, 0, 0); /* what is edited ends: regions are moved now */
+      if (mkbTouch())
+        showMathKeyboard(false, false);
+    }
+    focusKeys();
   }
 
   function pinchFrame() {
@@ -932,9 +949,12 @@
     } else if (one.moved) {
       panTo(e);
     } else if (Math.hypot(e.clientX - one.x0, e.clientY - one.y0) > SLOP) {
-      one.moved = true; /* a drag before the long press: it scrolls */
-      clearTimeout(one.timer);
-      panTo(e);
+      if (fingerMode === 'move') {
+        startDrag(e); /* moves the region, or the rubber band */
+      } else {
+        one.moved = true; /* the edit mode: it scrolls */
+        panTo(e);
+      }
     }
   }
 
@@ -950,13 +970,20 @@
     }
     if (!one || one.id !== e.pointerId)
       return;
-    clearTimeout(one.timer);
     if (one.drag) {
       p = dev(e.clientX, e.clientY);
       M._cw_mouse_up(p[0], p[1], 0);
     } else if (one.moved) {
       if (e.type === 'pointerup')
         glideFrom(one.track);
+    } else if (e.type === 'pointerup' && fingerMode === 'move') {
+      /* a tap: a region joins the selection or leaves it (Ctrl+click: not
+         edited); on nothing the selection is let go */
+      q = dev(one.x0, one.y0);
+      M._cw_mouse_down(q[0], q[1], 1, 0, 0);
+      M._cw_mouse_up(q[0], q[1], 0);
+      tapEnd = true;
+      focusKeys();
     } else if (e.type === 'pointerup') {
       q = dev(one.x0, one.y0);
       now = Date.now();
@@ -1079,6 +1106,14 @@
     document.getElementById('zoom100').onclick = function () { M._cw_command(C.ZOOM_100); focusKeys(); };
     /* Undo and Redo: the document's own history (Edit > Undo, Redo), moved
        regions too; the buttons take no focus from the keys */
+    /* the finger's modes (a touch screen): Edit and Move */
+    ['modeEdit', 'modeMove'].forEach(function (id) {
+      var b = document.getElementById(id);
+      b.classList.toggle('hidden', !touchy);
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+      b.onclick = function () { setFingerMode(id === 'modeMove' ? 'move' : 'edit'); };
+    });
+    document.getElementById('modeSep').classList.toggle('hidden', !touchy);
     ['undo', 'redo'].forEach(function (id) {
       var b = document.getElementById(id);
       b.addEventListener('mousedown', function (e) { e.preventDefault(); });
