@@ -630,9 +630,10 @@
      field, read-only too): the editor is told it has the focus, and a
      hardware keyboard's keys come to the document (keysToDocument). */
   function focusKeys(forceSystem) {
-    /* on a touch screen not the field either while nothing is edited (any
-       focus brings iOS's keyboard), unless the user asked for that keyboard */
-    if (M && touchy && !forceSystem && (mkbTouch() || M._cw_info(11) < 0)) {
+    /* on a touch screen the field only when the device's keyboard was
+       chosen (the keyboard key) and a formula or text is edited: any focus
+       brings iOS's keyboard */
+    if (M && touchy && !forceSystem && (!sysKb || M._cw_info(11) < 0)) {
       if (document.activeElement === keys)
         keys.blur();
       M._cw_focus(1);
@@ -939,15 +940,18 @@
       M._cw_mouse_up(q[0], q[1], 0);
       lastTap = dbl ? null : {t: now, x: one.x0, y: one.y0};
       tapEnd = true; /* its touchend's default prevented */
-      if (mkbTouch()) {
-        focusKeys(); /* the editor's focus, no field's */
-      } else if (M._cw_info(11) >= 0) {
-        /* a formula or text edited: the device's keyboard, focused again in
-           the touchend (iOS shows it only there) */
+      if (sysKb && M._cw_info(11) >= 0) {
+        /* the device's keyboard chosen (the keyboard key) and a formula or
+           text edited: the field, focused again in the touchend (iOS shows
+           its keyboard only there) */
         focusKeys();
         tapped = true;
-      } else if (document.activeElement === keys) {
-        keys.blur(); /* nothing edited: no keyboard */
+      } else {
+        /* a formula or text edited: the formula keyboard, as GeoGebra's
+           (not the device's, which only the keyboard key brings) */
+        if (!sysKb && M._cw_info(11) >= 0 && !mkbTouch())
+          showMathKeyboard(true, false);
+        focusKeys(); /* the editor's focus, no field's */
       }
     }
     one = null;
@@ -1129,6 +1133,9 @@
   };
 
   var mkb = null;
+  /* the device's keyboard chosen (the keyboard key; kept as 'sys'): on a
+     touch screen it comes for nothing else */
+  var sysKb = false;
 
   /* The device's on-screen keyboard kept away while this one is shown on
      a touch screen: the field read-only (as GeoGebra's: iOS shows no
@@ -1145,9 +1152,13 @@
     var el = document.getElementById('mkb');
     el.classList.toggle('hidden', !on);
     document.getElementById('mkbtoggle').classList.toggle('on', on);
-    try { localStorage.setItem('calccad-mkb', on ? '1' : '0'); } catch (e) { /* no storage */ }
+    if (system)
+      sysKb = true; /* the keyboard key: the device's keyboard from now on */
+    else if (on)
+      sysKb = false;
+    try { localStorage.setItem('calccad-mkb', on ? '1' : sysKb ? 'sys' : '0'); } catch (e) { /* no storage */ }
     if (touchy || keys.readOnly) {
-      deviceKeyboard(!(on && touchy));
+      deviceKeyboard(sysKb || !touchy);
       if (system || on) {
         /* counted from the next focus; shown: no field's; the device's
            keyboard only when asked for (the keyboard key) */
@@ -1179,7 +1190,7 @@
     }
     log('touchy ' + touchy + ' maxTouchPoints ' + navigator.maxTouchPoints + ' pointer:coarse ' +
         matchMedia('(pointer: coarse)').matches + ' any-pointer:coarse ' + matchMedia('(any-pointer: coarse)').matches +
-        ' mkbTouch ' + mkbTouch() + ' keys.readOnly ' + keys.readOnly + ' inputMode ' + keys.inputMode);
+        ' mkbTouch ' + mkbTouch() + ' sysKb ' + sysKb + ' keys.readOnly ' + keys.readOnly + ' inputMode ' + keys.inputMode);
     log(navigator.userAgent);
     document.addEventListener('focusin', function (e) {
       log('focusin ' + name(e.target) + ' (editing ' + M._cw_info(11) + ', mkbTouch ' + mkbTouch() + ')\n' +
@@ -1218,12 +1229,13 @@
     /* shows or hides this keyboard; hidden, the device's comes only when a
        formula is edited (the keyboard key asks for it at once) */
     btn.onclick = function () { showMathKeyboard(document.getElementById('mkb').classList.contains('hidden'), false); };
+    sysKb = stored === 'sys';
     if (stored === '1' || (stored === null && touchy)) {
       document.getElementById('mkb').classList.remove('hidden');
       btn.classList.add('on');
-      if (touchy)
-        deviceKeyboard(false);
     }
+    if (touchy && !sysKb)
+      deviceKeyboard(false);
   }
 
   createCalccad({
