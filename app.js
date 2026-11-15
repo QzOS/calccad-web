@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   var C = {NEW: 100, OPEN: 101, SAVE: 102, SAVEAS: 103, EXIT: 104, PRINT: 105, SAVE_EMF: 106,
-           CUT: 202, COPY: 203, PASTE: 204, COPY_IMAGE: 207,
+           UNDO: 200, REDO: 201, CUT: 202, COPY: 203, PASTE: 204, COPY_IMAGE: 207,
            INS_MATRIX: 303, INS_UNIT: 308, INS_FUNC: 309, INS_TABLE_CSV: 313, SYM_EVAL: 314,
            ZOOM_IN: 502, ZOOM_OUT: 503, ZOOM_100: 504, HELP: 600, ABOUT: 601, EXAMPLE: 602,
            VIEW_PAL0: 900, VIEW_STANDARD: 950, VIEW_RULER: 951, VIEW_STATUS: 952, VIEW_FORMAT: 953,
@@ -1077,6 +1077,13 @@
     document.getElementById('zoomin').onclick = function () { M._cw_command(C.ZOOM_IN); focusKeys(); };
     document.getElementById('zoomout').onclick = function () { M._cw_command(C.ZOOM_OUT); focusKeys(); };
     document.getElementById('zoom100').onclick = function () { M._cw_command(C.ZOOM_100); focusKeys(); };
+    /* Undo and Redo: the document's own history (Edit > Undo, Redo), moved
+       regions too; the buttons take no focus from the keys */
+    ['undo', 'redo'].forEach(function (id) {
+      var b = document.getElementById(id);
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+      b.onclick = function () { command(id === 'undo' ? C.UNDO : C.REDO); focusKeys(); };
+    });
     mathKeyboard();
     if (new URLSearchParams(location.search).has('debug'))
       debugPanel();
