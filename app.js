@@ -1229,11 +1229,10 @@
     /* shows or hides this keyboard; hidden, the device's comes only when a
        formula is edited (the keyboard key asks for it at once) */
     btn.onclick = function () { showMathKeyboard(document.getElementById('mkb').classList.contains('hidden'), false); };
+    /* hidden when the page loads: it comes with a tap into a formula or
+       text on a touch screen, or by the button; only the choice of the
+       device's keyboard is kept */
     sysKb = stored === 'sys';
-    if (stored === '1' || (stored === null && touchy)) {
-      document.getElementById('mkb').classList.remove('hidden');
-      btn.classList.add('on');
-    }
     if (touchy && !sysKb)
       deviceKeyboard(false);
   }
