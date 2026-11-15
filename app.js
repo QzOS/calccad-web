@@ -1273,8 +1273,20 @@
       sel.appendChild(o);
     });
     sel.value = want;
+    sel.dataset.shown = want;
     sel.onchange = function () {
-      confirmDiscard().then(function (go) { if (go) load(sel.value); });
+      var name = sel.value;
+      /* the list lets go of the focus first: the question's dialog gives
+         it back when it closes, and iOS opens a focused list again */
+      sel.blur();
+      confirmDiscard().then(function (go) {
+        if (go) {
+          sel.dataset.shown = name;
+          load(name);
+        } else {
+          sel.value = sel.dataset.shown; /* cancelled: the sheet shown */
+        }
+      });
     };
     return load(want);
   }).catch(function (e) {
