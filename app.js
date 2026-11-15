@@ -177,6 +177,7 @@
         throw new Error(name + ': ' + r.status);
       return r.text();
     }).then(function (text) {
+      M._cw_probe(0, 0, 0); /* a new sheet: no measuring point */
       FS.writeFile('/examples/' + name, text);
       if (!M.ccall('cw_open_path', 'number', ['string'], ['/examples/' + name]))
         throw new Error(name + ': inget calccad-blad');
@@ -849,8 +850,11 @@
   /* The finger's mode (the toolbar, a touch screen): 'edit', a tap places
      the caret or the crosshair and a drag scrolls; 'move', a drag on a
      region moves it (with what else is selected), a drag on nothing is
-     the rubber band, a tap selects a region or lets it go. Two fingers
-     zoom and pan in both; the mouse and a pen are as ever. */
+     the rubber band, a tap selects a region or lets it go; 'probe', a
+     finger on a plot reads the sample nearest it (a cross and the values
+     follow the finger along the curves; the reading stays when it lifts),
+     elsewhere a drag scrolls. Two fingers zoom and pan in all; the mouse
+     and a pen are as ever. */
   var fingerMode = 'edit';
 
   /* a drag in the move mode: the mouse's drag from where the finger
@@ -890,6 +894,10 @@
     } else if (f.length === 1) {
       one = {id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, drag: false,
              sl: scroller.scrollLeft, st: scroller.scrollTop, track: []};
+      if (fingerMode === 'probe') {
+        var q = dev(e.clientX, e.clientY);
+        one.probe = M._cw_probe(q[0], q[1], 1) === 1; /* on a plot: read; else the point goes */
+      }
     }
   }
 
@@ -897,9 +905,12 @@
     fingerMode = m;
     document.getElementById('modeEdit').classList.toggle('on', m === 'edit');
     document.getElementById('modeMove').classList.toggle('on', m === 'move');
-    if (m === 'move') {
+    document.getElementById('modeProbe').classList.toggle('on', m === 'probe');
+    if (m !== 'probe')
+      M._cw_probe(0, 0, 0); /* the measuring point goes with its mode */
+    if (m !== 'edit') {
       if (M._cw_info(11) >= 0)
-        M._cw_key(AK.Escape, 0, 0); /* what is edited ends: regions are moved now */
+        M._cw_key(AK.Escape, 0, 0); /* what is edited ends: regions are moved or read now */
       if (mkbTouch())
         showMathKeyboard(false, false);
     }
@@ -943,7 +954,10 @@
     }
     if (!one || one.id !== e.pointerId)
       return;
-    if (one.drag) {
+    if (one.probe) {
+      p = dev(e.clientX, e.clientY);
+      M._cw_probe(p[0], p[1], 2); /* the reading follows the finger */
+    } else if (one.drag) {
       p = dev(e.clientX, e.clientY);
       M._cw_mouse_move(p[0], p[1], 1);
     } else if (one.moved) {
@@ -976,6 +990,8 @@
     } else if (one.moved) {
       if (e.type === 'pointerup')
         glideFrom(one.track);
+    } else if (one.probe || (e.type === 'pointerup' && fingerMode === 'probe')) {
+      tapEnd = true; /* the reading stays; nothing edited */
     } else if (e.type === 'pointerup' && fingerMode === 'move') {
       /* a tap: a region joins the selection or leaves it (Ctrl+click: not
          edited); on nothing the selection is let go */
@@ -1107,11 +1123,11 @@
     /* Undo and Redo: the document's own history (Edit > Undo, Redo), moved
        regions too; the buttons take no focus from the keys */
     /* the finger's modes (a touch screen): Edit and Move */
-    ['modeEdit', 'modeMove'].forEach(function (id) {
+    ['modeEdit', 'modeMove', 'modeProbe'].forEach(function (id) {
       var b = document.getElementById(id);
       b.classList.toggle('hidden', !touchy);
       b.addEventListener('mousedown', function (e) { e.preventDefault(); });
-      b.onclick = function () { setFingerMode(id === 'modeMove' ? 'move' : 'edit'); };
+      b.onclick = function () { setFingerMode({modeEdit: 'edit', modeMove: 'move', modeProbe: 'probe'}[id]); };
     });
     document.getElementById('modeSep').classList.toggle('hidden', !touchy);
     ['undo', 'redo'].forEach(function (id) {
