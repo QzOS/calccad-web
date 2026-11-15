@@ -880,12 +880,35 @@
     f = fingerList();
     if (f.length === 2) {
       dropOne();
-      pinch = {d: Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y), zoom: M._cw_info(2)};
+      pinch = {d: Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y), zoom: M._cw_info(2),
+               mx: (f[0].x + f[1].x) / 2, my: (f[0].y + f[1].y) / 2};
     } else if (f.length === 1) {
       one = {id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, drag: false,
              sl: scroller.scrollLeft, st: scroller.scrollTop, track: []};
       one.timer = setTimeout(longPress, LONG_MS);
     }
+  }
+
+  function pinchFrame() {
+    var f, d, c, mx, my;
+    if (!pinch)
+      return;
+    pinch.frame = 0;
+    f = fingerList();
+    if (f.length < 2 || pinch.d <= 0)
+      return;
+    mx = (f[0].x + f[1].x) / 2;
+    my = (f[0].y + f[1].y) / 2;
+    d = Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y);
+    c = dev(mx, my);
+    M._cw_zoom(pinch.zoom * d / pinch.d, c[0], c[1]);
+    /* and pans with the fingers' middle, as a map does: told to the view
+       at once (the zoom's bars just put the scroller where the view has
+       it, so a change of the scroller would be lost) */
+    M._cw_scroll(1, Math.round(M._cw_info(5) + (pinch.my - my) * ratio));
+    M._cw_scroll(0, Math.round(M._cw_info(4) + (pinch.mx - mx) * ratio));
+    pinch.mx = mx;
+    pinch.my = my;
   }
 
   function fingerMove(e) {
@@ -894,12 +917,11 @@
       return;
     fingers[e.pointerId] = {x: e.clientX, y: e.clientY};
     if (pinch) {
-      f = fingerList();
-      if (f.length >= 2 && pinch.d > 0) {
-        d = Math.hypot(f[0].x - f[1].x, f[0].y - f[1].y);
-        c = dev((f[0].x + f[1].x) / 2, (f[0].y + f[1].y) / 2);
-        M._cw_zoom(pinch.zoom * d / pinch.d, c[0], c[1]);
-      }
+      /* once a frame, with both fingers where they are now (each finger's
+         move is an event of its own: one moved, the other not yet, the
+         zoom went to and fro about two middles and the sheet drifted) */
+      if (!pinch.frame)
+        pinch.frame = requestAnimationFrame(pinchFrame);
       return;
     }
     if (!one || one.id !== e.pointerId)
@@ -986,9 +1008,15 @@
     scroller.addEventListener('scroll', function () {
       if (echo && scroller.scrollTop === echo[0] && scroller.scrollLeft === echo[1])
         return; /* where bars() put it */
+      if (pinch)
+        return; /* two fingers move the view itself; the scroller follows it */
       echo = null;
-      M._cw_scroll(1, Math.round(scroller.scrollTop * ratio));
-      M._cw_scroll(0, Math.round(scroller.scrollLeft * ratio));
+      /* both read first: the view's answer to the one (bars) puts the
+         scroller back where the view had it, the other way too, so the
+         sheet never scrolled sideways */
+      var top = Math.round(scroller.scrollTop * ratio), left = Math.round(scroller.scrollLeft * ratio);
+      M._cw_scroll(1, top);
+      M._cw_scroll(0, left);
     });
     scroller.addEventListener('wheel', function (e) {
       var r;
