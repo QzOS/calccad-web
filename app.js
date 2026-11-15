@@ -585,8 +585,15 @@
         navigator.clipboard.writeText(clip).catch(function () {});
       return;
     case C.PASTE:
+      /* the system's clipboard; refused (a permission, iOS), what was
+         copied here last */
       if (navigator.clipboard && navigator.clipboard.readText)
-        navigator.clipboard.readText().then(function (t) { M.ccall('cw_paste', null, ['string'], [t]); }, function () {});
+        navigator.clipboard.readText().then(function (t) { M.ccall('cw_paste', null, ['string'], [t]); }, function () {
+          if (window.calccadLastClip)
+            M.ccall('cw_paste', null, ['string'], [window.calccadLastClip]);
+        });
+      else if (window.calccadLastClip)
+        M.ccall('cw_paste', null, ['string'], [window.calccadLastClip]);
       return;
     case C.INS_MATRIX:
       return matrixDialog();
@@ -1131,10 +1138,13 @@
       b.onclick = function () { setFingerMode({modeEdit: 'edit', modeMove: 'move', modeProbe: 'probe'}[id]); };
     });
     document.getElementById('modeSep').classList.toggle('hidden', !touchy);
-    ['undo', 'redo'].forEach(function (id) {
+    /* Undo, Redo, Cut, Copy, Paste: the Edit menu's (the selected regions,
+       the text selected in a text, the formula's selection) */
+    var EDIT_BUTTONS = {undo: C.UNDO, redo: C.REDO, cut: C.CUT, copy: C.COPY, paste: C.PASTE};
+    Object.keys(EDIT_BUTTONS).forEach(function (id) {
       var b = document.getElementById(id);
       b.addEventListener('mousedown', function (e) { e.preventDefault(); });
-      b.onclick = function () { command(id === 'undo' ? C.UNDO : C.REDO); focusKeys(); };
+      b.onclick = function () { command(EDIT_BUTTONS[id]); focusKeys(); };
     });
     mathKeyboard();
     if (new URLSearchParams(location.search).has('debug'))
