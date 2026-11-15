@@ -139,19 +139,30 @@
       return;
     }
     window.calccadThreads = mt;
-    s = document.createElement('script');
-    s.src = mt ? 'calccad-mt.js' : 'calccad.js';
-    s.onload = function () {
-      var a = document.createElement('script');
-      var k = document.createElement('script');
-      k.src = 'math_keyboard.js';
-      k.onload = function () {
-        a.src = 'app.js';
-        document.body.appendChild(a);
+    /* The version published (version.txt, asked for at an address no cache
+       holds), and every file of the app loaded under it (?v=): GitHub
+       Pages' CDN keeps a file 10 minutes, and served the old app.js beside
+       a new version.txt. Without version.txt (make webserve): no ?v. */
+    function load(v) {
+      var tag = v ? '?v=' + encodeURIComponent(v) : '';
+      window.calccadVersion = tag;
+      s = document.createElement('script');
+      s.src = (mt ? 'calccad-mt.js' : 'calccad.js') + tag;
+      s.onload = function () {
+        var a = document.createElement('script');
+        var k = document.createElement('script');
+        k.src = 'math_keyboard.js' + tag;
+        k.onload = function () {
+          a.src = 'app.js' + tag;
+          document.body.appendChild(a);
+        };
+        document.body.appendChild(k);
       };
-      document.body.appendChild(k);
-    };
-    document.body.appendChild(s);
+      document.body.appendChild(s);
+    }
+    fetch('version.txt?t=' + Date.now(), {cache: 'no-store'}).then(function (r) {
+      return r.ok ? r.text() : '';
+    }).then(function (t) { load(/^[0-9a-f]{4,40}$/.test(t.trim()) ? t.trim() : ''); }, function () { load(''); });
   })();
 </script>
 </body>

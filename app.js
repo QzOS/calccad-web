@@ -1239,6 +1239,9 @@
   }
 
   createCalccad({
+    /* the .wasm (and the threads' script) under the page's version, as the
+       scripts (index.html) */
+    locateFile: function (f, prefix) { return prefix + f + (window.calccadVersion || ''); },
     onInvalidate: paint,
     onBars: function () { bars.apply(null, arguments); },
     onStatus: function (h, n, m) { if (M) status(h, n, m); },
