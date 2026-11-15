@@ -629,8 +629,10 @@
      focuses no field at all (iOS brought its own keyboard for any focused
      field, read-only too): the editor is told it has the focus, and a
      hardware keyboard's keys come to the document (keysToDocument). */
-  function focusKeys() {
-    if (M && mkbTouch()) {
+  function focusKeys(forceSystem) {
+    /* on a touch screen not the field either while nothing is edited (any
+       focus brings iOS's keyboard), unless the user asked for that keyboard */
+    if (M && touchy && !forceSystem && (mkbTouch() || M._cw_info(11) < 0)) {
       if (document.activeElement === keys)
         keys.blur();
       M._cw_focus(1);
@@ -1145,9 +1147,10 @@
     if (touchy || keys.readOnly) {
       deviceKeyboard(!(on && touchy));
       if (system || on) {
-        /* counted from the next focus; shown: no field's */
+        /* counted from the next focus; shown: no field's; the device's
+           keyboard only when asked for (the keyboard key) */
         keys.blur();
-        focusKeys();
+        focusKeys(system && !on);
       }
     }
     resized();
@@ -1159,7 +1162,9 @@
     window.calccadMathKeyboard = mkb;
     try { stored = localStorage.getItem('calccad-mkb'); } catch (e) { /* no storage */ }
     btn.addEventListener('mousedown', function (e) { e.preventDefault(); }); /* the keys keep the focus */
-    btn.onclick = function () { showMathKeyboard(document.getElementById('mkb').classList.contains('hidden'), true); };
+    /* shows or hides this keyboard; hidden, the device's comes only when a
+       formula is edited (the keyboard key asks for it at once) */
+    btn.onclick = function () { showMathKeyboard(document.getElementById('mkb').classList.contains('hidden'), false); };
     if (stored === '1' || (stored === null && touchy)) {
       document.getElementById('mkb').classList.remove('hidden');
       btn.classList.add('on');
