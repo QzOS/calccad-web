@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   var C = {NEW: 100, OPEN: 101, SAVE: 102, SAVEAS: 103, EXIT: 104, PRINT: 105, SAVE_EMF: 106,
-           UNDO: 200, REDO: 201, CUT: 202, COPY: 203, PASTE: 204, COPY_IMAGE: 207,
+           UNDO: 200, REDO: 201, CUT: 202, DELETE: 205, COPY: 203, PASTE: 204, COPY_IMAGE: 207,
            INS_MATRIX: 303, INS_UNIT: 308, INS_FUNC: 309, INS_TABLE_CSV: 313, SYM_EVAL: 314,
            ZOOM_IN: 502, ZOOM_OUT: 503, ZOOM_100: 504, HELP: 600, ABOUT: 601, EXAMPLE: 602,
            VIEW_PAL0: 900, VIEW_STANDARD: 950, VIEW_RULER: 951, VIEW_STATUS: 952, VIEW_FORMAT: 953,
@@ -1140,11 +1140,17 @@
     document.getElementById('modeSep').classList.toggle('hidden', !touchy);
     /* Undo, Redo, Cut, Copy, Paste: the Edit menu's (the selected regions,
        the text selected in a text, the formula's selection) */
-    var EDIT_BUTTONS = {undo: C.UNDO, redo: C.REDO, cut: C.CUT, copy: C.COPY, paste: C.PASTE};
+    var EDIT_BUTTONS = {undo: C.UNDO, redo: C.REDO, cut: C.CUT, copy: C.COPY, paste: C.PASTE, del: C.DELETE};
     Object.keys(EDIT_BUTTONS).forEach(function (id) {
       var b = document.getElementById(id);
       b.addEventListener('mousedown', function (e) { e.preventDefault(); });
-      b.onclick = function () { command(EDIT_BUTTONS[id]); focusKeys(); };
+      b.onclick = function () {
+        if (id === 'del' && M._cw_info(11) >= 0)
+          M._cw_key(AK.Delete, 0, 0); /* in what is edited: its selection, or what follows the caret */
+        else
+          command(EDIT_BUTTONS[id]); /* the selected regions */
+        focusKeys();
+      };
     });
     mathKeyboard();
     if (new URLSearchParams(location.search).has('debug'))
